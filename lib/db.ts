@@ -97,6 +97,17 @@ export async function ensureAllTablesExist() {
     );
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id SERIAL PRIMARY KEY,
+      action VARCHAR(50) NOT NULL,
+      details TEXT NOT NULL,
+      badge VARCHAR(50),
+      event_id INTEGER REFERENCES events(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+
   try {
     const existingEvents = await sql`SELECT COUNT(*)::int as count FROM events;`;
     if (existingEvents && existingEvents[0]?.count === 0) {
