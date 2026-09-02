@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sql, ensureAllTablesExist } from '@/lib/db';
 import { checkAdminAuth } from '@/lib/admin-auth';
 
-// GET attendees across multi-events with search, event filter, org filter, and checkin status
+// GET attendees across multi-events with search, event filter, org filter, checkin status & real-time stats
 export async function GET(request: NextRequest) {
   try {
     if (!checkAdminAuth(request)) {
@@ -24,9 +24,9 @@ export async function GET(request: NextRequest) {
       ? parseInt(eventIdParam, 10)
       : null;
 
-    // Fetch all published/active events for the dropdown filter
+    // Fetch all events for the dropdown filter
     const allEvents = await sql`
-      SELECT id, title, slug, status FROM events ORDER BY created_at DESC;
+      SELECT id, title, slug, status, max_capacity, start_date FROM events ORDER BY created_at DESC;
     `;
 
     // Fetch attendees with event title
@@ -87,7 +87,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Apply org and checkin filters in memory if requested
+    // Compute dynamic aggregate stats for the active event scope
+    let statsScopeAttendees = attendees;
+
+    // Apply org and checkin filters
     let filtered = attendees;
     if (org && org !== 'ALL') {
       filtered = filtered.filter(
@@ -102,22 +105,47 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Extract unique organizations for filter dropdown
-    const orgSet = new Set<string>();
-    attendees.forEach((a: any) => {
+    // Extract unique organizations
+    const orgMap = new Map<string, number>();
+    let totalAge = 0;
+    let countWithAge = 0;
+    let minAge = 999;
+    let maxAge = 0;
+    let checkedInCount = 0;
+
+    statsScopeAttendees.forEach((a: any) => {
+      if (a.checked_in) checkedInCount++;
       if (a.organization && a.organization.trim()) {
-        orgSet.add(a.organization.trim());
+        const orgName = a.organization.trim();
+        orgMap.set(orgName, (orgMap.get(orgName) || 0) + 1);
+      }
+      if (a.age && !isNaN(a.age) && a.age > 0) {
+        totalAge += a.age;
+        countWithAge++;
+        if (a.age < minAge) minAge = a.age;
+        if (a.age > maxAge) maxAge = a.age;
       }
     });
 
-    const checkedInCount = attendees.filter((a: any) => a.checked_in).length;
+    const avgAge = countWithAge > 0 ? parseFloat((totalAge / countWithAge).toFixed(1)) : 0;
+    const checkedInRatio = statsScopeAttendees.length > 0
+      ? Math.round((checkedInCount / statsScopeAttendees.length) * 100)
+      : 0;
 
     return NextResponse.json({
       attendees: filtered,
-      totalCount: attendees.length,
+      totalCount: statsScopeAttendees.length,
       filteredCount: filtered.length,
-      checkedInCount,
-      uniqueOrganizations: Array.from(orgSet).sort(),
+      stats: {
+        total: statsScopeAttendees.length,
+        checkedInCount,
+        checkedInRatio: `${checkedInRatio}%`,
+        organizations: orgMap.size,
+        avgAge,
+        minAge: minAge === 999 ? 0 : minAge,
+        maxAge,
+      },
+      uniqueOrganizations: Array.from(orgMap.keys()).sort(),
       events: allEvents,
     });
   } catch (error: any) {
@@ -167,7 +195,32 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Attendee not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, attendee: updated[0] });
+    const rec = updated[0];
+
+    // Log to audit_logs
+    if (isCheckedIn !== undefined) {
+      await sql`
+        INSERT INTO audit_logs (action, details, badge, event_id)
+        VALUES (
+          'CHECKIN',
+          ${(isCheckedIn ? 'Checked in ' : 'Unmarked check-in for ') + rec.name + ' (' + (rec.attendee_id || 'REG-' + rec.id) + ')'},
+          ${isCheckedIn ? 'CHECKED-IN' : 'PENDING'},
+          ${rec.event_id}
+        );
+      `;
+    } else {
+      await sql`
+        INSERT INTO audit_logs (action, details, badge, event_id)
+        VALUES (
+          'UPDATE',
+          ${'Updated record for ' + rec.name + ' (' + (rec.attendee_id || 'REG-' + rec.id) + ')'},
+          'UPDATE',
+          ${rec.event_id}
+        );
+      `;
+    }
+
+    return NextResponse.json({ success: true, attendee: rec });
   } catch (error: any) {
     console.error('Error updating attendee:', error);
     return NextResponse.json(
@@ -177,7 +230,7 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-// POST bulk action (e.g. bulk checkin / uncheckin)
+// POST bulk action (bulk checkin / uncheckin)
 export async function POST(request: NextRequest) {
   try {
     if (!checkAdminAuth(request)) {
@@ -201,6 +254,16 @@ export async function POST(request: NextRequest) {
         SET checked_in = ${isCheckIn}
         WHERE id = ANY(${validIds});
       `;
+
+      await sql`
+        INSERT INTO audit_logs (action, details, badge)
+        VALUES (
+          'CHECKIN',
+          ${(isCheckIn ? 'Bulk marked checked-in ' : 'Bulk unmarked check-in for ') + validIds.length + ' attendees'},
+          'BULK'
+        );
+      `;
+
       return NextResponse.json({ success: true, updated: validIds.length });
     }
 
@@ -214,7 +277,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE attendee(s) with double deletion support
+// DELETE attendee(s) with double deletion support & audit logging
 export async function DELETE(request: NextRequest) {
   try {
     if (!checkAdminAuth(request)) {
@@ -234,7 +297,6 @@ export async function DELETE(request: NextRequest) {
         idsToDelete.push(parsed);
       }
     } else {
-      // Check if IDs provided in JSON body
       try {
         const body = await request.json();
         if (Array.isArray(body?.ids)) {
@@ -249,9 +311,26 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Valid attendee ID(s) required' }, { status: 400 });
     }
 
+    // Get names for audit log
+    const toDelete = await sql`
+      SELECT id, name, attendee_id, event_id FROM event_registrations WHERE id = ANY(${idsToDelete});
+    `;
+
     await sql`
       DELETE FROM event_registrations
       WHERE id = ANY(${idsToDelete});
+    `;
+
+    // Audit log
+    const names = toDelete.map((r: any) => r.name).join(', ');
+    await sql`
+      INSERT INTO audit_logs (action, details, badge, event_id)
+      VALUES (
+        'DELETE',
+        ${'Double-verified deletion of ' + idsToDelete.length + ' attendee(s): ' + names},
+        'PURGE',
+        ${toDelete[0]?.event_id || null}
+      );
     `;
 
     return NextResponse.json({

@@ -13,7 +13,14 @@ import {
   X,
   Sparkles,
   UserCheck,
-  ShieldAlert
+  ShieldAlert,
+  BarChart2,
+  Trash2,
+  List,
+  LayoutGrid,
+  Clock,
+  CheckCircle2,
+  ArrowRight
 } from 'lucide-react';
 import { DoubleDeleteModal } from '@/components/DoubleDeleteModal';
 
@@ -34,6 +41,7 @@ export const EventListTable: React.FC<EventListTableProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'published' | 'draft' | 'archived'>('ALL');
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
   // Double delete event state
   const [deleteEventTarget, setDeleteEventTarget] = useState<Event | null>(null);
@@ -85,27 +93,52 @@ export const EventListTable: React.FC<EventListTableProps> = ({
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white"
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-white cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/80 border border-white/10 text-xs self-start sm:self-auto">
-          {(['ALL', 'published', 'draft', 'archived'] as const).map((status) => (
+        <div className="flex items-center gap-3">
+          {/* Status filter pills */}
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-slate-900/80 border border-white/10 text-xs">
+            {(['ALL', 'published', 'draft', 'archived'] as const).map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-3 py-1.5 rounded-xl capitalize font-semibold transition cursor-pointer ${
+                  statusFilter === status
+                    ? 'bg-amber-500 text-stone-900 shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {status === 'ALL' ? 'All Events' : status}
+              </button>
+            ))}
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center bg-slate-900/80 border border-white/10 rounded-2xl p-1">
             <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`px-3 py-1.5 rounded-xl capitalize font-semibold transition ${
-                statusFilter === status
-                  ? 'bg-amber-500 text-stone-900 shadow'
-                  : 'text-slate-400 hover:text-white'
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded-xl text-xs font-medium transition cursor-pointer ${
+                viewMode === 'table' ? 'bg-amber-500 text-stone-900 shadow' : 'text-slate-400 hover:text-white'
               }`}
+              title="Table View"
             >
-              {status === 'ALL' ? 'All Events' : status}
+              <List className="w-4 h-4" />
             </button>
-          ))}
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`p-1.5 rounded-xl text-xs font-medium transition cursor-pointer ${
+                viewMode === 'cards' ? 'bg-amber-500 text-stone-900 shadow' : 'text-slate-400 hover:text-white'
+              }`}
+              title="Card Grid View"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -116,7 +149,7 @@ export const EventListTable: React.FC<EventListTableProps> = ({
             Try adjusting your search terms or create a new event.
           </p>
         </div>
-      ) : (
+      ) : viewMode === 'table' ? (
         <div className="rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-white/10 overflow-hidden shadow-2xl">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
@@ -125,9 +158,8 @@ export const EventListTable: React.FC<EventListTableProps> = ({
                   <th className="px-6 py-4">Event &amp; Slug</th>
                   <th className="px-6 py-4">Status</th>
                   <th className="px-6 py-4">Schedule</th>
-                  <th className="px-6 py-4">Registrations</th>
-                  <th className="px-6 py-4">Capacity</th>
-                  <th className="px-6 py-4 text-right">Actions</th>
+                  <th className="px-6 py-4">Live Registrations &amp; Capacity</th>
+                  <th className="px-6 py-4 text-right">Quick Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -138,8 +170,13 @@ export const EventListTable: React.FC<EventListTableProps> = ({
                     year: 'numeric',
                   });
 
+                  const count = event.registration_count || 0;
+                  const max = event.max_capacity || 0;
+                  const percent = max > 0 ? Math.min(100, Math.round((count / max) * 100)) : 0;
+
                   return (
                     <tr key={event.id} className="hover:bg-white/5 transition-colors">
+                      {/* Event Title & Slug */}
                       <td className="px-6 py-4">
                         <div>
                           <span className="font-bold text-white text-sm block">
@@ -151,6 +188,7 @@ export const EventListTable: React.FC<EventListTableProps> = ({
                         </div>
                       </td>
 
+                      {/* Status */}
                       <td className="px-6 py-4">
                         <span
                           className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${
@@ -165,6 +203,7 @@ export const EventListTable: React.FC<EventListTableProps> = ({
                         </span>
                       </td>
 
+                      {/* Schedule */}
                       <td className="px-6 py-4">
                         <span className="flex items-center gap-1.5 text-slate-300">
                           <Calendar className="w-3.5 h-3.5 text-amber-400" />
@@ -172,63 +211,78 @@ export const EventListTable: React.FC<EventListTableProps> = ({
                         </span>
                       </td>
 
-                      <td className="px-6 py-4">
-                        {onSelectEventForAttendees ? (
-                          <button
-                            onClick={() => onSelectEventForAttendees(event.id)}
-                            className="font-bold text-white hover:text-amber-400 flex items-center gap-1.5 group transition"
-                            title="Click to view & manage attendees for this event"
-                          >
-                            <Users className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
-                            <span>{event.registration_count || 0} attendees</span>
-                            <span className="text-[10px] text-amber-400 font-normal underline ml-1">
-                              Manage &rarr;
+                      {/* Live Registrations & Capacity Progress Bar */}
+                      <td className="px-6 py-4 min-w-[220px]">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-white flex items-center gap-1.5">
+                              <Users className="w-3.5 h-3.5 text-amber-400" />
+                              {count} registered
                             </span>
-                          </button>
-                        ) : (
-                          <span className="font-bold text-white flex items-center gap-1.5">
-                            <Users className="w-3.5 h-3.5 text-amber-400" />
-                            {event.registration_count || 0} attendees
-                          </span>
-                        )}
+                            <span className="text-[11px] font-mono text-slate-400">
+                              {max > 0 ? `${percent}% of ${max}` : 'Unlimited'}
+                            </span>
+                          </div>
+
+                          {max > 0 && (
+                            <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  percent >= 90
+                                    ? 'bg-rose-500'
+                                    : percent >= 70
+                                    ? 'bg-amber-500'
+                                    : 'bg-gradient-to-r from-amber-500 to-emerald-400'
+                                }`}
+                                style={{ width: `${percent}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
                       </td>
 
-                      <td className="px-6 py-4">
-                        <span className="font-mono text-slate-400">
-                          {event.max_capacity > 0 ? `${event.max_capacity} max` : 'Unlimited'}
-                        </span>
-                      </td>
-
+                      {/* Quick Actions */}
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {/* View public page */}
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Preview Public Page */}
                           <a
                             href={`/events/${event.slug}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition"
-                            title="View Public Event Page"
+                            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition cursor-pointer"
+                            title="Preview Public Page"
                           >
                             <ExternalLink className="w-4 h-4" />
                           </a>
 
-                          {/* Edit event */}
+                          {/* View Attendees / Analytics */}
+                          {onSelectEventForAttendees && (
+                            <button
+                              onClick={() => onSelectEventForAttendees(event.id)}
+                              className="p-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 transition cursor-pointer"
+                              title="Manage Event Attendees"
+                            >
+                              <BarChart2 className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Edit Event */}
                           <button
                             onClick={() => onEdit(event)}
-                            className="p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 transition"
-                            title="Edit Event Configuration"
+                            className="p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 transition cursor-pointer"
+                            title="Edit Event Settings"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
 
-                          {/* Double-verified Archive */}
+                          {/* Delete / Archive Event (Double-Verified) */}
                           {event.status !== 'archived' && (
                             <button
                               onClick={() => setDeleteEventTarget(event)}
-                              className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition"
-                              title="Archive Event (Double-Verified)"
+                              className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition cursor-pointer"
+                              title="Archive / Delete Event"
                             >
-                              <Archive className="w-4 h-4" />
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           )}
                         </div>
@@ -239,6 +293,111 @@ export const EventListTable: React.FC<EventListTableProps> = ({
               </tbody>
             </table>
           </div>
+        </div>
+      ) : (
+        /* Cards View */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filteredEvents.map((event) => {
+            const startDate = new Date(event.start_date).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            });
+            const count = event.registration_count || 0;
+            const max = event.max_capacity || 0;
+            const percent = max > 0 ? Math.min(100, Math.round((count / max) * 100)) : 0;
+
+            return (
+              <div
+                key={event.id}
+                className="p-6 rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-white/10 hover:border-amber-500/30 transition flex flex-col justify-between space-y-4"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${
+                        event.status === 'published'
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                          : event.status === 'draft'
+                          ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                          : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                      }`}
+                    >
+                      {event.status}
+                    </span>
+                    <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                      <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                      {startDate}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h4 className="text-lg font-bold text-white line-clamp-1">{event.title}</h4>
+                    <span className="font-mono text-amber-400 text-xs">/events/{event.slug}</span>
+                    <p className="text-xs text-slate-400 line-clamp-2 mt-1">{event.description}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-3 border-t border-white/5">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-white flex items-center gap-1">
+                        <Users className="w-3.5 h-3.5 text-amber-400" />
+                        {count} Registered
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-400">
+                        {max > 0 ? `${percent}% of ${max}` : 'Unlimited'}
+                      </span>
+                    </div>
+                    {max > 0 && (
+                      <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div
+                          className="h-full bg-amber-500 rounded-full"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      onClick={() => onSelectEventForAttendees && onSelectEventForAttendees(event.id)}
+                      className="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Manage Attendees</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+
+                    <div className="flex items-center gap-1">
+                      <a
+                        href={`/events/${event.slug}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300"
+                        title="Preview"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                      <button
+                        onClick={() => onEdit(event)}
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-amber-400 cursor-pointer"
+                        title="Edit"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteEventTarget(event)}
+                        className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
+                        title="Archive"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

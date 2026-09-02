@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
@@ -132,30 +132,34 @@ export default function SingleEventPage() {
 
       {/* Interactive Content Sections */}
       <main className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-16 flex-1 w-full">
-        {/* CREATIVE FEATURE: Real-Time Live Attendee Feed */}
-        {event.recent_attendees && event.recent_attendees.length > 0 && (
-          <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-xl border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-lg">
-            <div className="flex items-center gap-2 text-amber-400 font-bold shrink-0">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span>Live Attendee Activity Feed:</span>
+        {/* Privacy-Safe Live Attendance Metric Bar */}
+        <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-xl border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-lg">
+          <div className="flex items-center gap-2.5 text-amber-400 font-bold shrink-0">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="tracking-wide">Live Event Attendance:</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-slate-300 text-xs">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold">
+              <Users className="w-3.5 h-3.5 text-amber-400" />
+              <span>{event.registration_count || 0} Registered Attendees</span>
             </div>
 
-            <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto py-1 scrollbar-none">
-              {event.recent_attendees.map((att, i) => (
-                <div
-                  key={i}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-slate-200 shrink-0 text-[11px]"
-                >
-                  <Users className="w-3 h-3 text-amber-400" />
-                  <span><strong>{att.name}</strong></span>
-                  {att.organization && (
-                    <span className="text-slate-400">&bull; {att.organization}</span>
-                  )}
-                </div>
-              ))}
+            {event.max_capacity > 0 && (
+              <div className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-slate-400">
+                <span>Capacity:</span>
+                <span className="font-semibold text-white">
+                  {Math.max(0, event.max_capacity - (event.registration_count || 0))} seats remaining
+                </span>
+              </div>
+            )}
+
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Direct Digital Pass Issuance Active</span>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Main Interactive Pass or Form */}
         <section id="register-section" className="scroll-mt-28">

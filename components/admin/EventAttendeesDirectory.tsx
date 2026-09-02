@@ -29,7 +29,11 @@ import {
   Calendar,
   Tag,
   ShieldCheck,
-  UserX
+  UserX,
+  Users,
+  Activity,
+  History,
+  FileText
 } from 'lucide-react';
 import { DoubleDeleteModal, DeletableAttendee } from '@/components/DoubleDeleteModal';
 
@@ -37,16 +41,53 @@ interface EventAttendeesDirectoryProps {
   adminToken: string;
   selectedEventId?: number | null;
   onRefreshEvents?: () => void;
+  onEventChange?: (eventId: number | null) => void;
+}
+
+interface StatsData {
+  total: number;
+  checkedInCount: number;
+  checkedInRatio: string;
+  organizations: number;
+  avgAge: number;
+  minAge: number;
+  maxAge: number;
+}
+
+interface AuditLogItem {
+  id: number;
+  action: string;
+  details: string;
+  badge?: string;
+  event_id?: number | null;
+  created_at: string;
 }
 
 export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = ({
   adminToken,
   selectedEventId = null,
   onRefreshEvents,
+  onEventChange,
 }) => {
   const [attendees, setAttendees] = useState<EventRegistration[]>([]);
   const [eventsList, setEventsList] = useState<Array<{ id: number; title: string; slug: string }>>([]);
   const [loading, setLoading] = useState(true);
+
+  // Sub-view: Directory vs Audit Log
+  const [activeSubView, setActiveSubView] = useState<'directory' | 'audit'>('directory');
+  const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+
+  // Dynamic Real-time Analytics Stats
+  const [stats, setStats] = useState<StatsData>({
+    total: 0,
+    checkedInCount: 0,
+    checkedInRatio: '0%',
+    organizations: 0,
+    avgAge: 0,
+    minAge: 0,
+    maxAge: 0,
+  });
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -83,14 +124,14 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
     notes: '',
   });
 
-  // Update event filter if prop changes
+  // Sync prop changes
   useEffect(() => {
     if (selectedEventId) {
       setSelectedEventFilter(String(selectedEventId));
     }
   }, [selectedEventId]);
 
-  // Fetch attendees from API
+  // Fetch attendees and dynamic stats from API
   const fetchAttendees = useCallback(async () => {
     if (!adminToken) return;
     try {
@@ -116,6 +157,9 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
       if (data.attendees) {
         setAttendees(data.attendees);
       }
+      if (data.stats) {
+        setStats(data.stats);
+      }
       if (data.events) {
         setEventsList(data.events);
       }
@@ -130,6 +174,31 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
     fetchAttendees();
   }, [fetchAttendees]);
 
+  // Fetch audit logs
+  const fetchAuditLogs = useCallback(async () => {
+    if (!adminToken) return;
+    try {
+      setLoadingAudit(true);
+      const res = await fetch('/api/admin/audit-logs', {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      const data = await res.json();
+      if (data.logs) {
+        setAuditLogs(data.logs);
+      }
+    } catch (e) {
+      console.error('Error loading audit logs:', e);
+    } finally {
+      setLoadingAudit(false);
+    }
+  }, [adminToken]);
+
+  useEffect(() => {
+    if (activeSubView === 'audit') {
+      fetchAuditLogs();
+    }
+  }, [activeSubView, fetchAuditLogs]);
+
   // Extract unique organizations
   const uniqueOrganizations = useMemo(() => {
     const orgs = new Set<string>();
@@ -140,6 +209,14 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
     });
     return Array.from(orgs).sort();
   }, [attendees]);
+
+  // Handle Event filter change
+  const handleEventFilterChange = (val: string) => {
+    setSelectedEventFilter(val);
+    if (onEventChange) {
+      onEventChange(val === 'ALL' ? null : parseInt(val, 10));
+    }
+  };
 
   // Multi-select helpers
   const handleSelectAll = () => {
@@ -160,7 +237,7 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
     setSelectedIds(next);
   };
 
-  // Toggle Check-in status
+  // Live Check-in toggle with immediate state update & dynamic stat refresh
   const handleToggleCheckin = async (attendee: EventRegistration) => {
     const newStatus = !attendee.checked_in;
     try {
@@ -179,6 +256,17 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
         setAttendees((prev) =>
           prev.map((a) => (a.id === attendee.id ? { ...a, checked_in: newStatus } : a))
         );
+        // Optimistically adjust stats
+        setStats((prev) => {
+          const newCheckedCount = newStatus ? prev.checkedInCount + 1 : Math.max(0, prev.checkedInCount - 1);
+          const ratio = prev.total > 0 ? `${Math.round((newCheckedCount / prev.total) * 100)}%` : '0%';
+          return {
+            ...prev,
+            checkedInCount: newCheckedCount,
+            checkedInRatio: ratio,
+          };
+        });
+        if (onRefreshEvents) onRefreshEvents();
       }
     } catch (e) {
       console.error('Error toggling checkin:', e);
@@ -205,6 +293,8 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
           prev.map((a) => (selectedIds.has(a.id) ? { ...a, checked_in: checkedIn } : a))
         );
         setSelectedIds(new Set());
+        fetchAttendees();
+        if (onRefreshEvents) onRefreshEvents();
       }
     } catch (e) {
       console.error('Error bulk checkin:', e);
@@ -263,6 +353,7 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
           ids.forEach((id) => next.delete(id));
           return next;
         });
+        fetchAttendees();
         if (onRefreshEvents) onRefreshEvents();
       } else {
         const data = await res.json();
@@ -294,8 +385,7 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
       'Organization',
       'Role',
       'Check-in Status',
-      'Dietary',
-      'T-Shirt Size',
+      'Early Bird',
       'Notes',
       'Registered At',
     ];
@@ -309,8 +399,7 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
       `"${(a.organization || '').replace(/"/g, '""')}"`,
       `"${(a.role || '').replace(/"/g, '""')}"`,
       a.checked_in ? 'Checked In' : 'Pending',
-      `"${(a.dietary || '').replace(/"/g, '""')}"`,
-      `"${(a.tshirt_size || '').replace(/"/g, '""')}"`,
+      a.is_early_bird ? 'Yes' : 'No',
       `"${(a.notes || '').replace(/"/g, '""')}"`,
       `"${new Date(a.created_at).toLocaleString()}"`,
     ]);
@@ -323,7 +412,7 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
     link.setAttribute('href', encodedUri);
     link.setAttribute(
       'download',
-      `event_attendees_${new Date().toISOString().split('T')[0]}.csv`
+      `attendees_export_${selectedEventFilter !== 'ALL' ? `event_${selectedEventFilter}_` : ''}${new Date().toISOString().split('T')[0]}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -378,450 +467,611 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
   };
 
   return (
-    <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-white/10 shadow-2xl space-y-6">
-      {/* Top Header & Filters Bar */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <h3 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
-            <span>Attendee Directory &amp; Access Control</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-semibold">
-              {attendees.length} shown
+    <div className="space-y-6">
+      {/* 4 REAL-TIME ANALYTICS STAT CARDS (Image 4 format) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Stat 1: Total Registered */}
+        <div className="p-5 rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-white/10 shadow-lg flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              Total Registered
             </span>
-          </h3>
-          <p className="text-xs text-slate-400 mt-1">
-            Search, filter by multi-event, verify check-in status, or perform double-verified deletions.
-          </p>
+            <div className="text-3xl font-black text-white">{stats.total}</div>
+            <p className="text-[11px] text-slate-400">Live attendee records</p>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shadow-inner">
+            <Users className="w-6 h-6 text-amber-400" />
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          {/* Event Filter */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/20 text-xs text-slate-300">
-            <Calendar className="w-3.5 h-3.5 text-amber-400" />
-            <select
-              value={selectedEventFilter}
-              onChange={(e) => setSelectedEventFilter(e.target.value)}
-              className="bg-transparent text-slate-200 focus:outline-none cursor-pointer max-w-[150px] truncate"
-            >
-              <option value="ALL" className="bg-slate-900 text-white">All Events</option>
-              {eventsList.map((evt) => (
-                <option key={evt.id} value={evt.id} className="bg-slate-900 text-white">
-                  {evt.title}
-                </option>
-              ))}
-            </select>
+        {/* Stat 2: Checked-In Attendees */}
+        <div className="p-5 rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-white/10 shadow-lg flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              Checked-In Attendees
+            </span>
+            <div className="text-3xl font-black text-white flex items-baseline gap-2">
+              <span>{stats.checkedInCount}</span>
+              <span className="text-xs font-bold text-emerald-400">({stats.checkedInRatio})</span>
+            </div>
+            <p className="text-[11px] text-slate-400">Verified at venue entrance</p>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shadow-inner">
+            <UserCheck className="w-6 h-6 text-emerald-400" />
+          </div>
+        </div>
+
+        {/* Stat 3: Organizations */}
+        <div className="p-5 rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-white/10 shadow-lg flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              Organizations
+            </span>
+            <div className="text-3xl font-black text-white">{stats.organizations}</div>
+            <p className="text-[11px] text-slate-400">Unique corporate/academic entities</p>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shadow-inner">
+            <Building2 className="w-6 h-6 text-blue-400" />
+          </div>
+        </div>
+
+        {/* Stat 4: Average Age */}
+        <div className="p-5 rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-white/10 shadow-lg flex items-center justify-between">
+          <div className="space-y-1">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              Average Age
+            </span>
+            <div className="text-3xl font-black text-white">
+              {stats.avgAge > 0 ? `${stats.avgAge} yrs` : 'N/A'}
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {stats.minAge > 0 && stats.maxAge > 0 ? `Range: ${stats.minAge} – ${stats.maxAge} yrs` : 'Demographic sample'}
+            </p>
+          </div>
+          <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shadow-inner">
+            <Calendar className="w-6 h-6 text-purple-400" />
+          </div>
+        </div>
+      </div>
+
+      {/* Directory Main Panel */}
+      <div className="p-6 sm:p-8 rounded-3xl bg-slate-900/60 backdrop-blur-xl border border-white/10 shadow-2xl space-y-6">
+        {/* Top Header & Sub-view Switcher */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <h3 className="text-xl font-black text-white tracking-tight">
+                Attendee Directory &amp; Access Control
+              </h3>
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-bold">
+                {attendees.length} shown
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Search, filter by multi-event, verify check-in status, or perform double-verified deletions.
+            </p>
           </div>
 
-          {/* Org Filter */}
-          {uniqueOrganizations.length > 0 && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/20 text-xs text-slate-300">
-              <Filter className="w-3.5 h-3.5 text-amber-400" />
-              <select
-                value={selectedOrgFilter}
-                onChange={(e) => setSelectedOrgFilter(e.target.value)}
-                className="bg-transparent text-slate-200 focus:outline-none cursor-pointer max-w-[140px] truncate"
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            {/* View Switcher: Directory vs Audit Log */}
+            <div className="flex items-center p-1 rounded-2xl bg-slate-950/80 border border-white/10 text-xs">
+              <button
+                onClick={() => setActiveSubView('directory')}
+                className={`px-3.5 py-1.5 rounded-xl font-bold transition ${
+                  activeSubView === 'directory'
+                    ? 'bg-amber-500 text-stone-900 shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
               >
-                <option value="ALL" className="bg-slate-900 text-white">All Organizations</option>
-                {uniqueOrganizations.map((org) => (
-                  <option key={org} value={org} className="bg-slate-900 text-white">{org}</option>
+                Directory
+              </button>
+              <button
+                onClick={() => setActiveSubView('audit')}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-bold transition ${
+                  activeSubView === 'audit'
+                    ? 'bg-amber-500 text-stone-900 shadow'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <span>Audit Log</span>
+                {auditLogs.length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/10 text-slate-200 font-mono">
+                    {auditLogs.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Event Selector Filter */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/20 text-xs text-slate-300">
+              <Calendar className="w-3.5 h-3.5 text-amber-400" />
+              <select
+                value={selectedEventFilter}
+                onChange={(e) => handleEventFilterChange(e.target.value)}
+                className="bg-transparent text-slate-200 focus:outline-none cursor-pointer max-w-[150px] truncate"
+              >
+                <option value="ALL" className="bg-slate-900 text-white">All Events</option>
+                {eventsList.map((evt) => (
+                  <option key={evt.id} value={evt.id} className="bg-slate-900 text-white">
+                    {evt.title}
+                  </option>
                 ))}
               </select>
             </div>
-          )}
 
-          {/* Check-in Filter */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/20 text-xs text-slate-300">
-            <UserCheck className="w-3.5 h-3.5 text-amber-400" />
-            <select
-              value={selectedCheckinFilter}
-              onChange={(e) => setSelectedCheckinFilter(e.target.value)}
-              className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
-            >
-              <option value="ALL" className="bg-slate-900 text-white">All Check-in States</option>
-              <option value="CHECKED_IN" className="bg-slate-900 text-white">Checked In Only</option>
-              <option value="PENDING" className="bg-slate-900 text-white">Pending Check-in</option>
-            </select>
-          </div>
+            {/* Org Filter */}
+            {uniqueOrganizations.length > 0 && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/20 text-xs text-slate-300">
+                <Filter className="w-3.5 h-3.5 text-amber-400" />
+                <select
+                  value={selectedOrgFilter}
+                  onChange={(e) => setSelectedOrgFilter(e.target.value)}
+                  className="bg-transparent text-slate-200 focus:outline-none cursor-pointer max-w-[140px] truncate"
+                >
+                  <option value="ALL" className="bg-slate-900 text-white">All Organizations</option>
+                  {uniqueOrganizations.map((org) => (
+                    <option key={org} value={org} className="bg-slate-900 text-white">{org}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-          {/* Refresh */}
-          <button
-            onClick={fetchAttendees}
-            disabled={loading}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-slate-300 hover:text-white transition disabled:opacity-50"
-            title="Refresh list"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-
-          {/* View Mode Toggle */}
-          <div className="flex items-center bg-white/5 border border-white/10 rounded-xl p-1">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`p-1.5 rounded-lg text-xs font-medium transition ${
-                viewMode === 'table' ? 'bg-amber-500 text-stone-900 shadow' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Table View"
-            >
-              <List className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-lg text-xs font-medium transition ${
-                viewMode === 'grid' ? 'bg-amber-500 text-stone-900 shadow' : 'text-slate-400 hover:text-white'
-              }`}
-              title="Card Grid View"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Export CSV */}
-          <button
-            onClick={exportToCSV}
-            disabled={attendees.length === 0}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-900 text-xs font-bold shadow-md transition disabled:opacity-40"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export CSV</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Search Bar & Bulk Actions Bar (Image 2 style) */}
-      <div className="space-y-3">
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-            <Search className="w-4 h-4" />
-          </div>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name, email, phone, organization, role, tier, or attendee ID..."
-            className="w-full pl-10 pr-10 py-3 rounded-2xl bg-slate-950/60 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm transition"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white text-xs"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Bulk Actions Banner if items are selected */}
-        {selectedIds.size > 0 && (
-          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-3 animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 text-xs text-amber-300">
-              <CheckSquare className="w-4 h-4 text-amber-400" />
-              <span>
-                <strong>{selectedIds.size}</strong> attendee(s) selected
-              </span>
+            {/* Check-in Filter */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/20 text-xs text-slate-300">
+              <UserCheck className="w-3.5 h-3.5 text-amber-400" />
+              <select
+                value={selectedCheckinFilter}
+                onChange={(e) => setSelectedCheckinFilter(e.target.value)}
+                className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
+              >
+                <option value="ALL" className="bg-slate-900 text-white">All Check-in States</option>
+                <option value="CHECKED_IN" className="bg-slate-900 text-white">Checked In Only</option>
+                <option value="PENDING" className="bg-slate-900 text-white">Pending Check-in</option>
+              </select>
             </div>
 
-            <div className="flex items-center gap-2">
+            {/* Refresh */}
+            <button
+              onClick={fetchAttendees}
+              disabled={loading}
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/15 text-slate-300 hover:text-white transition disabled:opacity-50"
+              title="Refresh list"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+
+            {/* View Mode Toggle */}
+            <div className="flex items-center bg-white/5 border border-white/10 rounded-xl p-1">
               <button
-                onClick={() => handleBulkCheckin(true)}
-                className="px-3.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition"
+                onClick={() => setViewMode('table')}
+                className={`p-1.5 rounded-lg text-xs font-medium transition ${
+                  viewMode === 'table' ? 'bg-amber-500 text-stone-900 shadow' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Table View"
               >
-                Mark Checked-In
+                <List className="w-4 h-4" />
               </button>
               <button
-                onClick={() => handleBulkCheckin(false)}
-                className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition"
+                onClick={() => setViewMode('grid')}
+                className={`p-1.5 rounded-lg text-xs font-medium transition ${
+                  viewMode === 'grid' ? 'bg-amber-500 text-stone-900 shadow' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Card Grid View"
               >
-                Unmark Checked-In
-              </button>
-              <button
-                onClick={handleInitiateBulkDelete}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow transition"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete Selected (Double-Verified)</span>
-              </button>
-              <button
-                onClick={() => setSelectedIds(new Set())}
-                className="text-xs text-slate-400 hover:text-white px-2"
-              >
-                Deselect
+                <LayoutGrid className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Export CSV */}
+            <button
+              onClick={exportToCSV}
+              disabled={attendees.length === 0}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-900 text-xs font-bold shadow-md transition disabled:opacity-40"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export CSV</span>
+            </button>
+          </div>
+        </div>
+
+        {/* SUB-VIEW 1: DIRECTORY */}
+        {activeSubView === 'directory' ? (
+          <>
+            {/* Search Bar & Bulk Actions Bar */}
+            <div className="space-y-3">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                  <Search className="w-4 h-4" />
+                </div>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by name, email, phone, organization, role, tier, or attendee ID..."
+                  className="w-full pl-10 pr-10 py-3 rounded-2xl bg-slate-950/60 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm transition"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-white text-xs"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Bulk Actions Banner if items are selected */}
+              {selectedIds.size > 0 && (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-3 animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2 text-xs text-amber-300">
+                    <CheckSquare className="w-4 h-4 text-amber-400" />
+                    <span>
+                      <strong>{selectedIds.size}</strong> attendee(s) selected
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleBulkCheckin(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition"
+                    >
+                      Mark Checked-In
+                    </button>
+                    <button
+                      onClick={() => handleBulkCheckin(false)}
+                      className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 text-xs font-semibold transition"
+                    >
+                      Unmark Checked-In
+                    </button>
+                    <button
+                      onClick={handleInitiateBulkDelete}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold shadow transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Selected (Double-Verified)</span>
+                    </button>
+                    <button
+                      onClick={() => setSelectedIds(new Set())}
+                      className="text-xs text-slate-400 hover:text-white px-2"
+                    >
+                      Deselect
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Directory Table or Grid */}
+            {attendees.length === 0 ? (
+              <div className="p-12 rounded-2xl bg-slate-950/40 border border-white/5 text-center space-y-3">
+                <UserX className="w-10 h-10 text-slate-500 mx-auto" />
+                <p className="text-slate-300 text-sm font-semibold">No registered attendees match your filter.</p>
+                <p className="text-xs text-slate-500">
+                  Try adjusting your search query or selecting another event from the dropdown filter.
+                </p>
+              </div>
+            ) : viewMode === 'table' ? (
+              <div className="rounded-2xl bg-slate-950/40 border border-white/10 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-300">
+                    <thead className="bg-slate-950/80 uppercase tracking-wider text-[10px] text-slate-400 border-b border-white/10 font-bold">
+                      <tr>
+                        <th className="px-4 py-3.5 w-10 text-center">
+                          <button
+                            onClick={handleSelectAll}
+                            className="text-slate-400 hover:text-white focus:outline-none"
+                          >
+                            {selectedIds.size > 0 && selectedIds.size === attendees.length ? (
+                              <CheckSquare className="w-4 h-4 text-amber-400" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                          </button>
+                        </th>
+                        <th className="px-3 py-3.5 font-bold"># ID</th>
+                        <th className="px-5 py-3.5 font-bold">Attendee</th>
+                        <th className="px-4 py-3.5 font-bold">Event</th>
+                        <th className="px-4 py-3.5 font-bold">Check-in Status</th>
+                        <th className="px-5 py-3.5 font-bold">Contact Info</th>
+                        <th className="px-3 py-3.5 font-bold">Age</th>
+                        <th className="px-4 py-3.5 font-bold">Organization &amp; Role</th>
+                        <th className="px-4 py-3.5 text-right font-bold">Admin Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {attendees.map((attendee) => {
+                        const isSelected = selectedIds.has(attendee.id);
+                        const isCheckedIn = attendee.checked_in;
+
+                        return (
+                          <tr
+                            key={attendee.id}
+                            className={`hover:bg-white/5 transition-colors ${
+                              isSelected ? 'bg-amber-500/5' : ''
+                            }`}
+                          >
+                            {/* Checkbox */}
+                            <td className="px-4 py-3.5 text-center">
+                              <button
+                                onClick={() => handleToggleSelect(attendee.id)}
+                                className="text-slate-400 hover:text-white focus:outline-none"
+                              >
+                                {isSelected ? (
+                                  <CheckSquare className="w-4 h-4 text-amber-400" />
+                                ) : (
+                                  <Square className="w-4 h-4" />
+                                )}
+                              </button>
+                            </td>
+
+                            {/* Attendee ID */}
+                            <td className="px-3 py-3.5 whitespace-nowrap">
+                              <span className="font-mono font-bold text-amber-400 text-[11px]">
+                                {attendee.attendee_id || `#${attendee.id}`}
+                              </span>
+                            </td>
+
+                            {/* Name + Notes */}
+                            <td className="px-5 py-3.5">
+                              <div>
+                                <span className="font-bold text-white text-sm block">
+                                  {attendee.name}
+                                </span>
+                                {attendee.notes && (
+                                  <span className="text-slate-400 text-[11px] italic line-clamp-1">
+                                    &ldquo;{attendee.notes}&rdquo;
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Event Title */}
+                            <td className="px-4 py-3.5">
+                              <div className="space-y-1">
+                                <span className="font-semibold text-slate-200 block text-xs truncate max-w-[140px]">
+                                  {attendee.event_title || 'General Event'}
+                                </span>
+                                {attendee.is_early_bird && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                                    <Sparkles className="w-2.5 h-2.5" /> Early Bird
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Check-in Status Pill (Interactive) */}
+                            <td className="px-4 py-3.5">
+                              <button
+                                onClick={() => handleToggleCheckin(attendee)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition cursor-pointer ${
+                                  isCheckedIn
+                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20'
+                                    : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10 hover:text-white'
+                                }`}
+                                title="Click to toggle check-in status"
+                              >
+                                <span
+                                  className={`w-2 h-2 rounded-full ${
+                                    isCheckedIn ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
+                                  }`}
+                                />
+                                <span>{isCheckedIn ? 'Checked In' : 'Pending'}</span>
+                              </button>
+                            </td>
+
+                            {/* Contact Info */}
+                            <td className="px-5 py-3.5 space-y-1">
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
+                                <Mail className="w-3 h-3 text-slate-500 shrink-0" />
+                                <span className="truncate max-w-[160px] font-mono">{attendee.email}</span>
+                                <button
+                                  onClick={() => handleCopy(attendee.email, `email-${attendee.id}`)}
+                                  className="p-1 text-slate-500 hover:text-white transition"
+                                  title="Copy Email"
+                                >
+                                  {copiedField === `email-${attendee.id}` ? (
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3 h-3" />
+                                  )}
+                                </button>
+                              </div>
+                              {attendee.phone && (
+                                <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
+                                  <Phone className="w-3 h-3 text-slate-500 shrink-0" />
+                                  <span className="font-mono">{attendee.phone}</span>
+                                  <button
+                                    onClick={() => handleCopy(attendee.phone || '', `phone-${attendee.id}`)}
+                                    className="p-1 text-slate-500 hover:text-white transition"
+                                    title="Copy Phone"
+                                  >
+                                    {copiedField === `phone-${attendee.id}` ? (
+                                      <Check className="w-3 h-3 text-emerald-400" />
+                                    ) : (
+                                      <Copy className="w-3 h-3" />
+                                    )}
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Age */}
+                            <td className="px-3 py-3.5 font-mono text-slate-300">
+                              {attendee.age ? `${attendee.age} yrs` : '-'}
+                            </td>
+
+                            {/* Organization & Role */}
+                            <td className="px-4 py-3.5">
+                              <div className="space-y-0.5">
+                                <span className="font-semibold text-white block truncate max-w-[150px]">
+                                  {attendee.organization || 'Independent'}
+                                </span>
+                                {attendee.role && (
+                                  <span className="text-slate-400 flex items-center gap-1 text-[11px] truncate max-w-[150px]">
+                                    <Briefcase className="w-3 h-3 text-slate-500 shrink-0" />
+                                    {attendee.role}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Admin Actions */}
+                            <td className="px-4 py-3.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => setViewingPassAttendee(attendee)}
+                                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition"
+                                  title="View Digital QR Pass"
+                                >
+                                  <QrCode className="w-3.5 h-3.5 text-amber-400" />
+                                </button>
+
+                                <button
+                                  onClick={() => openEditModal(attendee)}
+                                  className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 transition"
+                                  title="Edit Attendee Details"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+
+                                <button
+                                  onClick={() => handleInitiateSingleDelete(attendee)}
+                                  className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition"
+                                  title="Double-Verified Delete"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              /* Card Grid View */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {attendees.map((attendee) => (
+                  <div
+                    key={attendee.id}
+                    className="p-5 rounded-2xl bg-slate-950/40 border border-white/10 hover:border-amber-500/30 transition space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-bold text-amber-400">
+                        {attendee.attendee_id || `#${attendee.id}`}
+                      </span>
+                      <button
+                        onClick={() => handleToggleCheckin(attendee)}
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold cursor-pointer ${
+                          attendee.checked_in
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : 'bg-white/5 text-slate-400 border border-white/10'
+                        }`}
+                      >
+                        {attendee.checked_in ? 'Checked In' : 'Pending'}
+                      </button>
+                    </div>
+
+                    <div>
+                      <h4 className="font-bold text-white text-base">{attendee.name}</h4>
+                      <p className="text-xs text-slate-400">{attendee.email}</p>
+                      {attendee.phone && <p className="text-xs text-slate-500 font-mono">{attendee.phone}</p>}
+                    </div>
+
+                    <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs text-slate-400">
+                      <span>{attendee.organization || 'Independent'}</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setViewingPassAttendee(attendee)}
+                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-amber-400"
+                          title="View QR Pass"
+                        >
+                          <QrCode className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => openEditModal(attendee)}
+                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleInitiateSingleDelete(attendee)}
+                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          /* SUB-VIEW 2: SYSTEM AUDIT LOG */
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <History className="w-4 h-4 text-amber-400" />
+                  <span>Administrative Security Audit Log</span>
+                </h4>
+                <p className="text-xs text-slate-400">
+                  Immutable chronological trail of all check-in verifications, record updates, purges, and migrations.
+                </p>
+              </div>
+              <button
+                onClick={fetchAuditLogs}
+                disabled={loadingAudit}
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs flex items-center gap-1.5 border border-white/10"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingAudit ? 'animate-spin' : ''}`} />
+                <span>Refresh Log</span>
+              </button>
+            </div>
+
+            {auditLogs.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 text-xs">
+                No audit events recorded yet.
+              </div>
+            ) : (
+              <div className="divide-y divide-white/5 rounded-2xl bg-slate-950/40 border border-white/10 overflow-hidden max-h-[500px] overflow-y-auto">
+                {auditLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    className="p-3.5 flex items-center justify-between gap-4 text-xs hover:bg-white/5 transition"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider ${
+                          log.action === 'DELETE'
+                            ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            : log.action === 'CHECKIN'
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : log.action === 'MIGRATION'
+                            ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                            : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        }`}
+                      >
+                        {log.badge || log.action}
+                      </span>
+                      <span className="text-slate-200">{log.details}</span>
+                    </div>
+                    <span className="text-slate-500 font-mono text-[11px] shrink-0">
+                      {new Date(log.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
-
-      {/* Directory Table or Grid */}
-      {attendees.length === 0 ? (
-        <div className="p-12 rounded-2xl bg-slate-950/40 border border-white/5 text-center space-y-3">
-          <UserX className="w-10 h-10 text-slate-500 mx-auto" />
-          <p className="text-slate-300 text-sm font-semibold">No registered attendees match your filter.</p>
-          <p className="text-xs text-slate-500">
-            Try resetting your search query or choosing another event from the dropdown filter.
-          </p>
-        </div>
-      ) : viewMode === 'table' ? (
-        <div className="rounded-2xl bg-slate-950/40 border border-white/10 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-950/80 uppercase tracking-wider text-[10px] text-slate-400 border-b border-white/10 font-bold">
-                <tr>
-                  <th className="px-4 py-3.5 w-10 text-center">
-                    <button
-                      onClick={handleSelectAll}
-                      className="text-slate-400 hover:text-white focus:outline-none"
-                    >
-                      {selectedIds.size > 0 && selectedIds.size === attendees.length ? (
-                        <CheckSquare className="w-4 h-4 text-amber-400" />
-                      ) : (
-                        <Square className="w-4 h-4" />
-                      )}
-                    </button>
-                  </th>
-                  <th className="px-3 py-3.5 font-bold"># ID</th>
-                  <th className="px-5 py-3.5 font-bold">Attendee</th>
-                  <th className="px-4 py-3.5 font-bold">Event &amp; Pass</th>
-                  <th className="px-4 py-3.5 font-bold">Check-in Status</th>
-                  <th className="px-5 py-3.5 font-bold">Contact Info</th>
-                  <th className="px-3 py-3.5 font-bold">Age</th>
-                  <th className="px-4 py-3.5 font-bold">Organization &amp; Role</th>
-                  <th className="px-4 py-3.5 text-right font-bold">Admin Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {attendees.map((attendee) => {
-                  const isSelected = selectedIds.has(attendee.id);
-                  const isCheckedIn = attendee.checked_in;
-
-                  return (
-                    <tr
-                      key={attendee.id}
-                      className={`hover:bg-white/5 transition-colors ${
-                        isSelected ? 'bg-amber-500/5' : ''
-                      }`}
-                    >
-                      {/* Checkbox */}
-                      <td className="px-4 py-3.5 text-center">
-                        <button
-                          onClick={() => handleToggleSelect(attendee.id)}
-                          className="text-slate-400 hover:text-white focus:outline-none"
-                        >
-                          {isSelected ? (
-                            <CheckSquare className="w-4 h-4 text-amber-400" />
-                          ) : (
-                            <Square className="w-4 h-4" />
-                          )}
-                        </button>
-                      </td>
-
-                      {/* Attendee ID */}
-                      <td className="px-3 py-3.5 whitespace-nowrap">
-                        <span className="font-mono font-bold text-amber-400 text-[11px]">
-                          {attendee.attendee_id || `#${attendee.id}`}
-                        </span>
-                      </td>
-
-                      {/* Name + Notes */}
-                      <td className="px-5 py-3.5">
-                        <div>
-                          <span className="font-bold text-white text-sm block">
-                            {attendee.name}
-                          </span>
-                          {attendee.notes && (
-                            <span className="text-slate-400 text-[11px] italic line-clamp-1">
-                              &ldquo;{attendee.notes}&rdquo;
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Event Title & Early Bird Badge */}
-                      <td className="px-4 py-3.5">
-                        <div className="space-y-1">
-                          <span className="font-semibold text-slate-200 block text-xs truncate max-w-[140px]">
-                            {attendee.event_title || 'General Event'}
-                          </span>
-                          {attendee.is_early_bird && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                              <Sparkles className="w-2.5 h-2.5" /> Early Bird
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Check-in Status Pill (Interactive) */}
-                      <td className="px-4 py-3.5">
-                        <button
-                          onClick={() => handleToggleCheckin(attendee)}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition ${
-                            isCheckedIn
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20'
-                              : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10 hover:text-white'
-                          }`}
-                          title="Click to toggle check-in status"
-                        >
-                          <span
-                            className={`w-2 h-2 rounded-full ${
-                              isCheckedIn ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
-                            }`}
-                          />
-                          <span>{isCheckedIn ? 'Checked In' : 'Pending'}</span>
-                        </button>
-                      </td>
-
-                      {/* Contact Info (with copy buttons) */}
-                      <td className="px-5 py-3.5 space-y-1">
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
-                          <Mail className="w-3 h-3 text-slate-500 shrink-0" />
-                          <span className="truncate max-w-[160px] font-mono">{attendee.email}</span>
-                          <button
-                            onClick={() => handleCopy(attendee.email, `email-${attendee.id}`)}
-                            className="p-1 text-slate-500 hover:text-white transition"
-                            title="Copy Email"
-                          >
-                            {copiedField === `email-${attendee.id}` ? (
-                              <Check className="w-3 h-3 text-emerald-400" />
-                            ) : (
-                              <Copy className="w-3 h-3" />
-                            )}
-                          </button>
-                        </div>
-                        {attendee.phone && (
-                          <div className="flex items-center gap-1.5 text-[11px] text-slate-300">
-                            <Phone className="w-3 h-3 text-slate-500 shrink-0" />
-                            <span className="font-mono">{attendee.phone}</span>
-                            <button
-                              onClick={() => handleCopy(attendee.phone || '', `phone-${attendee.id}`)}
-                              className="p-1 text-slate-500 hover:text-white transition"
-                              title="Copy Phone"
-                            >
-                              {copiedField === `phone-${attendee.id}` ? (
-                                <Check className="w-3 h-3 text-emerald-400" />
-                              ) : (
-                                <Copy className="w-3 h-3" />
-                              )}
-                            </button>
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Age */}
-                      <td className="px-3 py-3.5 font-mono text-slate-300">
-                        {attendee.age ? `${attendee.age} yrs` : '-'}
-                      </td>
-
-                      {/* Organization & Role */}
-                      <td className="px-4 py-3.5">
-                        <div className="space-y-0.5">
-                          <span className="font-semibold text-white block truncate max-w-[150px]">
-                            {attendee.organization || 'Independent'}
-                          </span>
-                          {attendee.role && (
-                            <span className="text-slate-400 flex items-center gap-1 text-[11px] truncate max-w-[150px]">
-                              <Briefcase className="w-3 h-3 text-slate-500 shrink-0" />
-                              {attendee.role}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Admin Actions */}
-                      <td className="px-4 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* View Digital Pass / QR */}
-                          <button
-                            onClick={() => setViewingPassAttendee(attendee)}
-                            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition"
-                            title="View Digital QR Pass"
-                          >
-                            <QrCode className="w-3.5 h-3.5 text-amber-400" />
-                          </button>
-
-                          {/* Edit Details */}
-                          <button
-                            onClick={() => openEditModal(attendee)}
-                            className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 transition"
-                            title="Edit Attendee Details"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Double-Verified Delete */}
-                          <button
-                            onClick={() => handleInitiateSingleDelete(attendee)}
-                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition"
-                            title="Double-Verified Delete"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : (
-        /* Card Grid View */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {attendees.map((attendee) => (
-            <div
-              key={attendee.id}
-              className="p-5 rounded-2xl bg-slate-950/40 border border-white/10 hover:border-amber-500/30 transition space-y-3"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-amber-400">
-                  {attendee.attendee_id || `#${attendee.id}`}
-                </span>
-                <button
-                  onClick={() => handleToggleCheckin(attendee)}
-                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                    attendee.checked_in
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                      : 'bg-white/5 text-slate-400 border border-white/10'
-                  }`}
-                >
-                  {attendee.checked_in ? 'Checked In' : 'Pending'}
-                </button>
-              </div>
-
-              <div>
-                <h4 className="font-bold text-white text-base">{attendee.name}</h4>
-                <p className="text-xs text-slate-400">{attendee.email}</p>
-                {attendee.phone && <p className="text-xs text-slate-500 font-mono">{attendee.phone}</p>}
-              </div>
-
-              <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs text-slate-400">
-                <span>{attendee.organization || 'Independent'}</span>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setViewingPassAttendee(attendee)}
-                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-amber-400"
-                    title="View QR Pass"
-                  >
-                    <QrCode className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => openEditModal(attendee)}
-                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300"
-                    title="Edit"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleInitiateSingleDelete(attendee)}
-                    className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Double Delete Modal (2-Step Verified) */}
       <DoubleDeleteModal
@@ -838,7 +1088,7 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
           <div className="relative w-full max-w-md rounded-3xl bg-slate-900 border border-white/10 p-6 shadow-2xl space-y-4">
             <button
               onClick={() => setViewingPassAttendee(null)}
-              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
+              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -865,7 +1115,7 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
             <div className="text-center">
               <button
                 onClick={() => setViewingPassAttendee(null)}
-                className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-semibold"
+                className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-semibold cursor-pointer"
               >
                 Close Pass View
               </button>
@@ -880,7 +1130,7 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
           <div className="relative w-full max-w-lg rounded-3xl bg-slate-900 border border-white/10 p-6 sm:p-8 shadow-2xl space-y-4">
             <button
               onClick={() => setEditingAttendee(null)}
-              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10"
+              className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -961,13 +1211,13 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
                 <button
                   type="button"
                   onClick={() => setEditingAttendee(null)}
-                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300"
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-900 font-bold"
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-900 font-bold cursor-pointer"
                 >
                   Save Changes
                 </button>
