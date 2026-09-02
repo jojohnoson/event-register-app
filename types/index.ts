@@ -1,4 +1,4 @@
-﻿export interface Registration {
+export interface Registration {
   id: number;
   name: string;
   email: string;
@@ -49,6 +49,15 @@ export interface FormFieldConfig {
   label?: string;
 }
 
+export interface CustomFieldItem {
+  id: string;
+  label: string;
+  type: 'text' | 'textarea' | 'number' | 'select';
+  required: boolean;
+  options?: string[];
+  placeholder?: string;
+}
+
 export interface FormFields {
   name: FormFieldConfig;
   email: FormFieldConfig;
@@ -59,6 +68,7 @@ export interface FormFields {
   dietary: FormFieldConfig;
   tshirt_size: FormFieldConfig;
   notes: FormFieldConfig;
+  custom_items?: CustomFieldItem[];
 }
 
 export interface SessionTrack {
