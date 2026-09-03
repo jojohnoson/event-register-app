@@ -1,11 +1,11 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
-import { Event, EventRegistration } from '@/types';
+import { Event, EventRegistration, CustomFieldItem } from '@/types';
 import {
   User, Mail, Phone, Calendar, Building2, Briefcase,
   FileText, Utensils, Shirt, Sparkles, AlertCircle,
-  Loader2, ArrowRight, Layers, Flame, Users
+  Loader2, ArrowRight, Layers, Flame, Users, Star
 } from 'lucide-react';
 
 interface DynamicRegistrationFormProps {
@@ -14,16 +14,6 @@ interface DynamicRegistrationFormProps {
   onOpenLookup?: () => void;
 }
 
-const CREATIVE_INTEREST_TAGS = [
-  'AI & Machine Learning',
-  'Cloud Architecture',
-  'Cybersecurity & Zero-Trust',
-  'High-Scale DevOps & SRE',
-  'Next.js & Frontend Engines',
-  'Data Engineering & LLMs',
-  'Venture & Tech Founders',
-  'Autonomous AI Agents'
-];
 
 export const DynamicRegistrationForm: React.FC<DynamicRegistrationFormProps> = ({
   event,
@@ -42,23 +32,20 @@ export const DynamicRegistrationForm: React.FC<DynamicRegistrationFormProps> = (
     tshirt_size: 'L',
   });
 
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  // Custom field responses: { [fieldId]: value }
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
+
   const [selectedSessions, setSelectedSessions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const fields = event.form_fields || {};
+  const customItems: CustomFieldItem[] = fields.custom_items || [];
   const currentCount = event.registration_count || 0;
   const maxCap = event.max_capacity || 0;
   const isCapped = maxCap > 0;
   const percentFilled = isCapped ? Math.min(100, Math.round((currentCount / maxCap) * 100)) : 0;
   const isAlmostFull = isCapped && percentFilled >= 80;
-
-  const toggleTag = (tag: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    );
-  };
 
   const toggleSession = (id: string) => {
     setSelectedSessions((prev) =>
@@ -69,6 +56,10 @@ export const DynamicRegistrationForm: React.FC<DynamicRegistrationFormProps> = (
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
     if (errorMessage) setErrorMessage(null);
+  };
+
+  const handleCustomFieldChange = (fieldId: string, val: string) => {
+    setCustomFieldValues((prev) => ({ ...prev, [fieldId]: val }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -84,8 +75,29 @@ export const DynamicRegistrationForm: React.FC<DynamicRegistrationFormProps> = (
       return;
     }
 
+    // Validate required custom fields
+    for (const customField of customItems) {
+      if (customField.required) {
+        const val = customFieldValues[customField.id]?.trim();
+        if (!val) {
+          setErrorMessage(`Please fill in the required field: "${customField.label}"`);
+          return;
+        }
+      }
+    }
+
     try {
       setLoading(true);
+
+      // Build custom_fields record using field labels as keys for clarity
+      const customFieldsForSubmit: Record<string, string> = {};
+      customItems.forEach((item) => {
+        const val = customFieldValues[item.id]?.trim() || '';
+        if (val) {
+          customFieldsForSubmit[item.label] = val;
+        }
+      });
+
       const res = await fetch('/api/registrations/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,8 +112,8 @@ export const DynamicRegistrationForm: React.FC<DynamicRegistrationFormProps> = (
           notes: formData.notes,
           dietary: formData.dietary,
           tshirt_size: formData.tshirt_size,
-          interest_tags: selectedTags,
           session_wishlist: selectedSessions,
+          custom_fields: customFieldsForSubmit,
         }),
       });
 
@@ -190,14 +202,14 @@ export const DynamicRegistrationForm: React.FC<DynamicRegistrationFormProps> = (
             </div>
           )}
 
-          {/* Core Dynamic Fields */}
+          {/* Section 1: Core & Standard Attendee Fields */}
           <div className="space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-widest text-amber-400 flex items-center gap-2">
               <span>1. Attendee Profile</span>
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Full Name (Always Enabled) */}
+              {/* Full Name (Always Permanent) */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
                   Full Name <span className="text-rose-500">*</span>
@@ -218,7 +230,7 @@ export const DynamicRegistrationForm: React.FC<DynamicRegistrationFormProps> = (
                 </div>
               </div>
 
-              {/* Email (Always Enabled) */}
+              {/* Email (Always Permanent) */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
                   Email Address <span className="text-rose-500">*</span>
@@ -239,28 +251,26 @@ export const DynamicRegistrationForm: React.FC<DynamicRegistrationFormProps> = (
                 </div>
               </div>
 
-              {/* Phone */}
-              {(fields.phone?.enabled ?? true) && (
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
-                    Phone Number {fields.phone?.required && <span className="text-rose-500">*</span>}
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                      <Phone className="w-4 h-4" />
-                    </div>
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleChange}
-                      placeholder="+1 (555) 019-2831"
-                      required={fields.phone?.required}
-                      className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950/60 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm transition"
-                    />
+              {/* Phone (Always Permanent) */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+                  Phone Number <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                    <Phone className="w-4 h-4" />
                   </div>
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleChange}
+                    placeholder="+1 (555) 019-2831"
+                    required
+                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950/60 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm transition"
+                  />
                 </div>
-              )}
+              </div>
 
               {/* Age */}
               {(fields.age?.enabled ?? true) && (
@@ -407,45 +417,71 @@ export const DynamicRegistrationForm: React.FC<DynamicRegistrationFormProps> = (
             )}
           </div>
 
-          {/* CREATIVE FEATURE: Interactive Tech Interest Tags */}
-          <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-between">
+          {/* ─────────────────────────────────────────────────────────── */}
+          {/* Section 2: EVENT-SPECIFIC CUSTOM FIELDS (Admin-Created)    */}
+          {/* ─────────────────────────────────────────────────────────── */}
+          {customItems.length > 0 && (
+            <div className="space-y-4 pt-2">
               <h3 className="text-xs font-bold uppercase tracking-widest text-amber-400 flex items-center gap-2">
-                <Sparkles className="w-4 h-4" />
-                <span>2. Customize Your Badge: Select Interests (Pick Any)</span>
+                <Star className="w-4 h-4" />
+                <span>2. Event-Specific Information</span>
               </h3>
-              <span className="text-[11px] text-slate-400">Printed directly on your pass</span>
-            </div>
 
-            <div className="flex flex-wrap gap-2">
-              {CREATIVE_INTEREST_TAGS.map((tag) => {
-                const isSelected = selectedTags.includes(tag);
-                return (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => toggleTag(tag)}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 border ${
-                      isSelected
-                        ? 'bg-amber-500 text-stone-900 border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.3)] scale-[1.02]'
-                        : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/10 hover:border-white/20'
-                    }`}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {customItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`space-y-1.5 ${item.type === 'textarea' ? 'sm:col-span-2' : ''}`}
                   >
-                    {isSelected ? '✓ ' : '+ '}
-                    {tag}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+                      {item.label}
+                      {item.required && <span className="text-rose-500 ml-1">*</span>}
+                    </label>
 
-          {/* CREATIVE FEATURE: Session Wishlist Picker */}
+                    {item.type === 'textarea' ? (
+                      <textarea
+                        rows={3}
+                        value={customFieldValues[item.id] || ''}
+                        onChange={(e) => handleCustomFieldChange(item.id, e.target.value)}
+                        placeholder={item.placeholder || `Enter your ${item.label.toLowerCase()}...`}
+                        required={item.required}
+                        className="w-full px-4 py-3 rounded-xl bg-slate-950/60 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm transition resize-none"
+                      />
+                    ) : item.type === 'select' && item.options && item.options.length > 0 ? (
+                      <select
+                        value={customFieldValues[item.id] || ''}
+                        onChange={(e) => handleCustomFieldChange(item.id, e.target.value)}
+                        required={item.required}
+                        className="w-full px-4 py-3 rounded-xl bg-slate-950/60 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm transition cursor-pointer"
+                      >
+                        <option value="" className="bg-slate-900">Select an option...</option>
+                        {item.options.map((opt) => (
+                          <option key={opt} value={opt} className="bg-slate-900">{opt}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type={item.type === 'number' ? 'number' : 'text'}
+                        value={customFieldValues[item.id] || ''}
+                        onChange={(e) => handleCustomFieldChange(item.id, e.target.value)}
+                        placeholder={item.placeholder || `Enter your ${item.label.toLowerCase()}...`}
+                        required={item.required}
+                        className="w-full px-4 py-3 rounded-xl bg-slate-950/60 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm transition"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Session Wishlist Picker */}
           {event.sessions && event.sessions.length > 0 && (
             <div className="space-y-3 pt-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-amber-400 flex items-center gap-2">
                   <Layers className="w-4 h-4" />
-                  <span>3. Session Priority Wishlist (Reserved Seating)</span>
+                  <span>{customItems.length > 0 ? '3' : '2'}. Session Priority Wishlist (Reserved Seating)</span>
                 </h3>
                 <span className="text-[11px] text-slate-400">Optional priority access</span>
               </div>

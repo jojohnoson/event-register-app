@@ -275,16 +275,14 @@ export const EventListTable: React.FC<EventListTableProps> = ({
                             <Edit2 className="w-4 h-4" />
                           </button>
 
-                          {/* Delete / Archive Event (Double-Verified) */}
-                          {event.status !== 'archived' && (
-                            <button
-                              onClick={() => setDeleteEventTarget(event)}
-                              className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition cursor-pointer"
-                              title="Archive / Delete Event"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
+                          {/* Permanent Delete Event (Double-Verified) */}
+                          <button
+                            onClick={() => setDeleteEventTarget(event)}
+                            className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition cursor-pointer"
+                            title="Delete Event Permanently"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -388,7 +386,7 @@ export const EventListTable: React.FC<EventListTableProps> = ({
                       <button
                         onClick={() => setDeleteEventTarget(event)}
                         className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 cursor-pointer"
-                        title="Archive"
+                        title="Delete Permanently"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -401,17 +399,20 @@ export const EventListTable: React.FC<EventListTableProps> = ({
         </div>
       )}
 
-      {/* Double-Verified Archive Modal for Events */}
+      {/* Double-Verified Permanent Delete Modal for Events */}
       {deleteEventTarget && (
         <DoubleDeleteModal
           isOpen={!!deleteEventTarget}
           onClose={() => setDeleteEventTarget(null)}
           onConfirmDelete={handleConfirmArchive}
+          title="Permanent Summit Deletion"
+          description="This action will permanently delete this event and all associated attendee registrations from the database. It will immediately disappear from both the admin dashboard and the live website."
+          entityType="event"
           targetAttendees={[
             {
               id: deleteEventTarget.id,
               name: deleteEventTarget.title,
-              email: `Slug: /events/${deleteEventTarget.slug}`,
+              email: `/events/${deleteEventTarget.slug}`,
               attendee_id: `EVENT-${deleteEventTarget.id}`,
             },
           ]}

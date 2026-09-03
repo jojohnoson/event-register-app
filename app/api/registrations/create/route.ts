@@ -17,7 +17,6 @@ export async function POST(request: NextRequest) {
       notes,
       dietary,
       tshirt_size,
-      interest_tags,
       session_wishlist,
       custom_fields,
     } = body;
@@ -66,14 +65,34 @@ export async function POST(request: NextRequest) {
     `;
     if (existing && existing.length > 0) {
       return NextResponse.json({ 
-        error: 'You have already registered for this event. Use Find My Pass to view your ticket.' 
+        error: 'You are already registered for this event.' 
       }, { status: 409 });
+    }
+
+    // ── Live DB migration: replace the broken single-column unique constraint
+    // on attendee_id with the correct composite (event_id, attendee_id) one.
+    // This is idempotent — safe to run on every request until the constraint is fixed.
+    try {
+      await sql`
+        ALTER TABLE event_registrations
+          DROP CONSTRAINT IF EXISTS event_registrations_attendee_id_key;
+      `;
+      await sql`
+        ALTER TABLE event_registrations
+          DROP CONSTRAINT IF EXISTS event_registrations_event_id_attendee_id_key;
+      `;
+      await sql`
+        ALTER TABLE event_registrations
+          ADD CONSTRAINT event_registrations_event_id_attendee_id_key
+          UNIQUE (event_id, attendee_id);
+      `;
+    } catch (_migErr) {
+      // Constraint already in the correct state — safe to continue
     }
 
     const attendeeId = await generateAttendeeId(event.id);
     const isEarlyBird = currentCount < 50;
 
-    const interestTagsJson = JSON.stringify(interest_tags || []);
     const sessionWishlistJson = JSON.stringify(session_wishlist || []);
     const customFieldsJson = JSON.stringify(custom_fields || {});
 
@@ -81,7 +100,7 @@ export async function POST(request: NextRequest) {
       INSERT INTO event_registrations (
         event_id, attendee_id, name, email, phone, age,
         organization, role, notes, dietary, tshirt_size,
-        interest_tags, session_wishlist, custom_fields,
+        session_wishlist, custom_fields,
         checked_in, is_early_bird
       ) VALUES (
         ${event.id},
@@ -95,7 +114,6 @@ export async function POST(request: NextRequest) {
         ${notes || null},
         ${dietary || null},
         ${tshirt_size || null},
-        ${interestTagsJson},
         ${sessionWishlistJson},
         ${customFieldsJson},
         FALSE,

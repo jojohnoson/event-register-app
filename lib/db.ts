@@ -77,7 +77,7 @@ export async function ensureAllTablesExist() {
     CREATE TABLE IF NOT EXISTS event_registrations (
       id SERIAL PRIMARY KEY,
       event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
-      attendee_id VARCHAR(20) UNIQUE,
+      attendee_id VARCHAR(20),
       name VARCHAR(255) NOT NULL,
       email VARCHAR(255) NOT NULL,
       phone VARCHAR(50),
@@ -93,6 +93,7 @@ export async function ensureAllTablesExist() {
       checked_in BOOLEAN DEFAULT FALSE,
       is_early_bird BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(event_id, attendee_id),
       UNIQUE(event_id, email)
     );
   `;
@@ -189,7 +190,7 @@ export async function getEventBySlug(slug: string): Promise<Event | null> {
     SELECT e.*, 
       (SELECT COUNT(*)::int FROM event_registrations er WHERE er.event_id = e.id) as registration_count
     FROM events e
-    WHERE e.slug = ${slug}
+    WHERE e.slug = ${slug} AND e.status != 'archived'
     LIMIT 1;
   `;
   if (!rows || rows.length === 0) return null;

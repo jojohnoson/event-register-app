@@ -30,6 +30,9 @@ interface DoubleDeleteModalProps {
   onConfirmDelete: (ids: number[]) => Promise<void>;
   targetAttendees: DeletableAttendee[];
   isBulk?: boolean;
+  title?: string;
+  description?: string;
+  entityType?: 'attendee' | 'event';
 }
 
 export const DoubleDeleteModal: React.FC<DoubleDeleteModalProps> = ({
@@ -38,6 +41,9 @@ export const DoubleDeleteModal: React.FC<DoubleDeleteModalProps> = ({
   onConfirmDelete,
   targetAttendees,
   isBulk = false,
+  title,
+  description,
+  entityType = 'attendee',
 }) => {
   const [step, setStep] = useState<1 | 2>(1);
   const [confirmationInput, setConfirmationInput] = useState('');
@@ -114,7 +120,7 @@ export const DoubleDeleteModal: React.FC<DoubleDeleteModalProps> = ({
               </span>
             </div>
             <h3 className="text-xl font-bold text-white tracking-tight">
-              {isBulk ? `Delete ${targetAttendees.length} Attendee Records` : 'Permanent Record Deletion'}
+              {title || (isBulk ? `Delete ${targetAttendees.length} Attendee Records` : 'Permanent Record Deletion')}
             </h3>
           </div>
         </div>
@@ -128,11 +134,15 @@ export const DoubleDeleteModal: React.FC<DoubleDeleteModalProps> = ({
                 <span>Irreversible Administrative Action</span>
               </div>
               <p className="text-slate-300">
-                This action will permanently purge the registration record and invalidate any associated digital attendee passes from the database.
+                {description || (
+                  entityType === 'event'
+                    ? 'This action will permanently delete the summit from the platform, including all associated attendee registrations and passes.'
+                    : 'This action will permanently purge the registration record and invalidate any associated digital attendee passes from the database.'
+                )}
               </p>
             </div>
 
-            {/* Attendee Record Preview */}
+            {/* Target Details */}
             <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-xl border border-white/10 space-y-2.5">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
                 Target Record Details:
@@ -150,15 +160,15 @@ export const DoubleDeleteModal: React.FC<DoubleDeleteModalProps> = ({
               ) : (
                 <div className="space-y-2 text-xs">
                   <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                    <span className="text-slate-400">Attendee Name:</span>
+                    <span className="text-slate-400">{entityType === 'event' ? 'Event Title:' : 'Attendee Name:'}</span>
                     <span className="font-semibold text-white">{targetAttendee.name}</span>
                   </div>
                   <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                    <span className="text-slate-400">Email Address:</span>
+                    <span className="text-slate-400">{entityType === 'event' ? 'URL Route:' : 'Email Address:'}</span>
                     <span className="font-mono text-slate-200">{targetAttendee.email}</span>
                   </div>
                   <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                    <span className="text-slate-400">Badge ID:</span>
+                    <span className="text-slate-400">{entityType === 'event' ? 'Event ID:' : 'Badge ID:'}</span>
                     <span className="font-mono font-bold text-amber-400">
                       {targetAttendee.attendee_id || `REG-${targetAttendee.id.toString().padStart(5, '0')}`}
                     </span>

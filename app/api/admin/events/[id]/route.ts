@@ -75,12 +75,12 @@ export async function DELETE(
     const { id } = await params;
 
     await sql`
-      UPDATE events SET status = 'archived' WHERE id = ${parseInt(id, 10)};
+      DELETE FROM events WHERE id = ${parseInt(id, 10)};
     `;
 
-    return NextResponse.json({ success: true, message: 'Event archived' });
+    return NextResponse.json({ success: true, message: 'Event permanently deleted' });
   } catch (error: any) {
-    console.error('Error archiving event:', error);
-    return NextResponse.json({ error: error.message || 'Failed to archive event' }, { status: 500 });
+    console.error('Error deleting event:', error);
+    return NextResponse.json({ error: error.message || 'Failed to delete event' }, { status: 500 });
   }
 }
