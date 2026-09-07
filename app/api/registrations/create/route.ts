@@ -75,15 +75,14 @@ export async function POST(request: NextRequest) {
     const sessionWishlistJson = JSON.stringify(session_wishlist || []);
     const customFieldsJson = JSON.stringify(custom_fields || {});
 
-    // Retry loop to handle any concurrent attendee_id generation collisions safely
+    // Robust Retry loop to handle any concurrent attendee_id generation collisions safely
     let registration = null;
     let attempts = 0;
-    const maxAttempts = 5;
+    const maxAttempts = 10;
 
     while (!registration && attempts < maxAttempts) {
+      const attendeeId = await generateAttendeeId(event.id, attempts);
       attempts++;
-      const attendeeId = await generateAttendeeId(event.id);
-      console.log(`[Registration POST] Attempt ${attempts}: Generated attendeeId = ${attendeeId} for event ${event.id}`);
 
       try {
         const inserted = await sql`
@@ -119,7 +118,7 @@ export async function POST(request: NextRequest) {
         // If it's a unique constraint violation on email
         if (
           insertError?.message?.includes('event_registrations_event_id_email_key') ||
-          (insertError?.code === '23505' && insertError?.message?.includes('email'))
+          (insertError?.code === '23505' && (insertError?.detail?.includes('email') || insertError?.message?.includes('email')))
         ) {
           return NextResponse.json({
             error: 'You are already registered for this event. Use "Find My Pass" to view your ticket.'
@@ -132,7 +131,10 @@ export async function POST(request: NextRequest) {
           insertError?.code === '23505'
         ) {
           if (attempts >= maxAttempts) {
-            throw insertError;
+            console.error('Max registration attempts reached:', insertError);
+            return NextResponse.json({ 
+              error: 'A temporary collision occurred while issuing your credential pass. Please try submitting again.' 
+            }, { status: 409 });
           }
           // Continue to next attempt
           continue;
