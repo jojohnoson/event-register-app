@@ -20,7 +20,7 @@ import {
   Briefcase,
   Copy,
   Check,
-  QrCode,
+  Ticket,
   Edit2,
   X,
   Sparkles,
@@ -921,10 +921,10 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   onClick={() => setViewingPassAttendee(attendee)}
-                                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition"
-                                  title="View Digital QR Pass"
+                                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition cursor-pointer"
+                                  title="View Digital Pass"
                                 >
-                                  <QrCode className="w-3.5 h-3.5 text-amber-400" />
+                                  <Ticket className="w-3.5 h-3.5 text-amber-400" />
                                 </button>
 
                                 <button
@@ -986,10 +986,10 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => setViewingPassAttendee(attendee)}
-                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-amber-400"
-                          title="View QR Pass"
+                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-amber-400 cursor-pointer"
+                          title="View Pass"
                         >
-                          <QrCode className="w-3.5 h-3.5" />
+                          <Ticket className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => openEditModal(attendee)}
@@ -1084,8 +1084,8 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
 
       {/* View Digital Pass Modal */}
       {viewingPassAttendee && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
-          <div className="relative w-full max-w-md rounded-3xl bg-slate-900 border border-white/10 p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <div className="relative w-full max-w-md rounded-3xl bg-slate-900 border border-white/10 p-6 sm:p-8 shadow-2xl space-y-5">
             <button
               onClick={() => setViewingPassAttendee(null)}
               className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer"
@@ -1097,19 +1097,27 @@ export const EventAttendeesDirectory: React.FC<EventAttendeesDirectoryProps> = (
               <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
                 Official Attendee Pass
               </span>
-              <h3 className="text-lg font-black text-white">{viewingPassAttendee.name}</h3>
+              <h3 className="text-xl font-black text-white">{viewingPassAttendee.name}</h3>
               <p className="text-xs text-slate-400">{viewingPassAttendee.event_title}</p>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-950 flex flex-col items-center justify-center space-y-3">
-              <img
-                src={`/api/registrations/qr?attendee_id=${viewingPassAttendee.attendee_id}`}
-                alt="QR Pass"
-                className="w-48 h-48 rounded-xl bg-slate-900 p-2 border border-white/10"
-              />
-              <span className="font-mono text-sm font-bold text-amber-400 tracking-wider">
-                {viewingPassAttendee.attendee_id}
+            <div className="p-5 rounded-2xl bg-slate-950 border border-amber-500/30 flex flex-col items-center justify-center space-y-3 shadow-inner text-center">
+              <span className="text-[10px] font-mono uppercase text-amber-400/80 font-bold">
+                Delegate Credential ID
               </span>
+              <div className="py-2.5 px-6 rounded-xl bg-slate-900 border border-white/10 shadow-inner">
+                <span className="font-mono text-2xl font-black text-amber-400 tracking-widest block">
+                  {viewingPassAttendee.attendee_id}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 font-medium">{viewingPassAttendee.email}</p>
+              {viewingPassAttendee.organization && (
+                <p className="text-xs text-slate-400">{viewingPassAttendee.organization}</p>
+              )}
+              <div className="pt-2 border-t border-white/10 w-full flex items-center justify-center gap-1.5 text-xs text-emerald-400 font-semibold">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Status: {viewingPassAttendee.checked_in ? 'Checked In' : 'Confirmed'}</span>
+              </div>
             </div>
 
             <div className="text-center">

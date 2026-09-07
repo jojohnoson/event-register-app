@@ -93,40 +93,6 @@ export const AttendeePass: React.FC<AttendeePassProps> = ({
     document.body.removeChild(link);
   };
 
-  // Dynamic QR Code SVG matrix generator based on ID & Name hash
-  const generateQrMatrix = () => {
-    const size = 21; // standard v1 QR grid
-    const seed = (user.id * 7919) ^ (user.name.length * 31);
-    const grid: boolean[][] = [];
-
-    for (let r = 0; r < size; r++) {
-      grid[r] = [];
-      for (let c = 0; c < size; c++) {
-        // Finder patterns (top-left, top-right, bottom-left 7x7 squares)
-        const inTopLeft = r < 7 && c < 7;
-        const inTopRight = r < 7 && c >= size - 7;
-        const inBottomLeft = r >= size - 7 && c < 7;
-
-        if (inTopLeft || inTopRight || inBottomLeft) {
-          const isBorder = (r === 0 || r === 6 || c === 0 || c === 6) && (inTopLeft);
-          const isTopRightBorder = (r === 0 || r === 6 || c === size - 7 || c === size - 1) && (inTopRight);
-          const isBottomLeftBorder = (r === size - 7 || r === size - 1 || c === 0 || c === 6) && (inBottomLeft);
-          const isCenter = (r >= 2 && r <= 4 && c >= 2 && c <= 4 && inTopLeft) ||
-                           (r >= 2 && r <= 4 && c >= size - 5 && c <= size - 3 && inTopRight) ||
-                           (r >= size - 5 && r <= size - 3 && c >= 2 && c <= 4 && inBottomLeft);
-          grid[r][c] = isBorder || isTopRightBorder || isBottomLeftBorder || isCenter;
-        } else {
-          // Pseudorandom pseudo-data bits seeded by attendee
-          const bitVal = Math.sin(seed + r * 13 + c * 37) * 10000;
-          grid[r][c] = (Math.floor(bitVal) % 2 === 0) || (r % 2 === 0 && c % 3 === 0);
-        }
-      }
-    }
-    return grid;
-  };
-
-  const qrMatrix = generateQrMatrix();
-
   const getTierBadgeStyle = () => {
     switch (tier) {
       case 'VIP All-Access':
@@ -210,9 +176,9 @@ export const AttendeePass: React.FC<AttendeePassProps> = ({
           </div>
         </div>
 
-        {/* Attendee Details Grid & QR Code Section */}
+        {/* Attendee Details Grid & Credential Badge Section */}
         <div className="relative z-10 py-6 space-y-6">
-          {/* Main Profile & Live QR Code Box */}
+          {/* Main Profile & Credential Box */}
           <div className="p-5 rounded-2xl bg-slate-900/60 backdrop-blur-xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-sm">
             <div className="space-y-1">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -240,31 +206,18 @@ export const AttendeePass: React.FC<AttendeePassProps> = ({
               </div>
             </div>
 
-            {/* Rendered SVG QR Code Pass */}
-            <div className="shrink-0 flex flex-col items-center justify-center p-3.5 rounded-2xl bg-slate-900/50 backdrop-blur-xl border border-white/10 text-black shadow-md">
-              <svg
-                viewBox="0 0 21 21"
-                className="w-24 h-24 sm:w-28 sm:h-28"
-                shapeRendering="crispEdges"
-              >
-                {qrMatrix.map((row, r) =>
-                  row.map((active, c) =>
-                    active ? (
-                      <rect
-                        key={`${r}-${c}`}
-                        x={c}
-                        y={r}
-                        width="1"
-                        height="1"
-                        fill="#1c1917"
-                      />
-                    ) : null
-                  )
-                )}
-              </svg>
-              <span className="mt-1 font-mono text-[9px] font-bold text-slate-200 tracking-wider">
+            {/* Credential ID Card */}
+            <div className="shrink-0 flex flex-col items-center justify-center p-4 rounded-2xl bg-slate-950/80 border border-amber-500/30 text-center space-y-1.5 shadow-md">
+              <span className="text-[10px] font-mono uppercase text-amber-400/80 font-bold">
+                Credential Pass
+              </span>
+              <span className="font-mono text-lg font-black text-amber-400 tracking-wider">
                 {formattedId}
               </span>
+              <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold pt-1 border-t border-white/10">
+                <ShieldCheck className="w-3 h-3" />
+                <span>Verified</span>
+              </div>
             </div>
           </div>
 

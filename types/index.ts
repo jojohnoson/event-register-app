@@ -119,6 +119,7 @@ export interface EventRegistration {
   is_early_bird: boolean;
   created_at: string;
   event_title?: string;
+  event_slug?: string;
   event_start_date?: string;
   event_end_date?: string;
 }

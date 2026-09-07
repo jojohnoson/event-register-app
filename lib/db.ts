@@ -98,6 +98,14 @@ export async function ensureAllTablesExist() {
     );
   `;
 
+  try {
+    // Clean up any legacy single-column unique constraint on attendee_id
+    await sql`
+      ALTER TABLE event_registrations
+        DROP CONSTRAINT IF EXISTS event_registrations_attendee_id_key;
+    `;
+  } catch {}
+
   await sql`
     CREATE TABLE IF NOT EXISTS audit_logs (
       id SERIAL PRIMARY KEY,
@@ -221,9 +229,34 @@ export async function getAllEventsAdmin(): Promise<Event[]> {
 }
 
 export async function generateAttendeeId(eventId: number): Promise<string> {
-  const result = await sql`
-    SELECT COUNT(*)::int as count FROM event_registrations WHERE event_id = ${eventId};
+  // Query all attendee_ids for this event to find the highest existing number
+  const rows = await sql`
+    SELECT attendee_id FROM event_registrations WHERE event_id = ${eventId};
   `;
-  const nextNum = (result[0]?.count || 0) + 1;
-  return 'REG-' + String(nextNum).padStart(5, '0');
+
+  let maxNum = 0;
+  const existingSet = new Set<string>();
+
+  for (const row of rows) {
+    if (row.attendee_id) {
+      existingSet.add(row.attendee_id);
+      const match = row.attendee_id.match(/REG-(\d+)/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+  }
+
+  let nextNum = maxNum + 1;
+  let candidate = 'REG-' + String(nextNum).padStart(5, '0');
+
+  while (existingSet.has(candidate)) {
+    nextNum++;
+    candidate = 'REG-' + String(nextNum).padStart(5, '0');
+  }
+
+  return candidate;
 }

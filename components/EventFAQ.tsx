@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { HelpCircle, ChevronDown, ShieldCheck, Ticket, QrCode, MapPin } from 'lucide-react';
+import { HelpCircle, ChevronDown, ShieldCheck, Ticket, MapPin } from 'lucide-react';
 
 interface FAQItem {
   id: string;
@@ -14,7 +14,7 @@ const FAQS: FAQItem[] = [
   {
     id: 'f1',
     question: 'How do I receive and access my digital attendee badge?',
-    answer: 'Immediately upon submitting your registration, your personalized Digital Attendee Pass is generated with a unique Badge ID and encrypted QR Code. You can print it, save it, or retrieve it anytime using the "Find My Attendee Pass" lookup by entering your registered email.',
+    answer: 'Immediately upon submitting your registration, your personalized Digital Attendee Pass is generated with a unique Badge ID. You can print it, save it, or retrieve it anytime using the "Find My Pass" lookup by entering your registered email.',
     category: 'Badging',
   },
   {

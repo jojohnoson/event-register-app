@@ -150,7 +150,7 @@ export const DynamicRegistrationForm: React.FC<DynamicRegistrationFormProps> = (
                 Secure Your Event Pass
               </h2>
               <p className="text-sm text-slate-300 mt-1">
-                Zero fees. Direct confirmation. Instant verified QR badge.
+                Zero fees. Direct confirmation. Instant verified attendee pass.
               </p>
             </div>
 
@@ -536,7 +536,7 @@ export const DynamicRegistrationForm: React.FC<DynamicRegistrationFormProps> = (
               {loading ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Generating Secure QR Pass...</span>
+                  <span>Generating Secure Pass...</span>
                 </>
               ) : (
                 <>

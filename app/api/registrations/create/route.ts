@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
       notes,
       dietary,
       tshirt_size,
+      interest_tags,
       session_wishlist,
       custom_fields,
     } = body;
@@ -65,64 +66,85 @@ export async function POST(request: NextRequest) {
     `;
     if (existing && existing.length > 0) {
       return NextResponse.json({ 
-        error: 'You are already registered for this event.' 
+        error: 'You are already registered for this event. Use "Find My Pass" to view your ticket.' 
       }, { status: 409 });
     }
 
-    // ── Live DB migration: replace the broken single-column unique constraint
-    // on attendee_id with the correct composite (event_id, attendee_id) one.
-    // This is idempotent — safe to run on every request until the constraint is fixed.
-    try {
-      await sql`
-        ALTER TABLE event_registrations
-          DROP CONSTRAINT IF EXISTS event_registrations_attendee_id_key;
-      `;
-      await sql`
-        ALTER TABLE event_registrations
-          DROP CONSTRAINT IF EXISTS event_registrations_event_id_attendee_id_key;
-      `;
-      await sql`
-        ALTER TABLE event_registrations
-          ADD CONSTRAINT event_registrations_event_id_attendee_id_key
-          UNIQUE (event_id, attendee_id);
-      `;
-    } catch (_migErr) {
-      // Constraint already in the correct state — safe to continue
-    }
-
-    const attendeeId = await generateAttendeeId(event.id);
     const isEarlyBird = currentCount < 50;
-
+    const interestTagsJson = JSON.stringify(interest_tags || []);
     const sessionWishlistJson = JSON.stringify(session_wishlist || []);
     const customFieldsJson = JSON.stringify(custom_fields || {});
 
-    const inserted = await sql`
-      INSERT INTO event_registrations (
-        event_id, attendee_id, name, email, phone, age,
-        organization, role, notes, dietary, tshirt_size,
-        session_wishlist, custom_fields,
-        checked_in, is_early_bird
-      ) VALUES (
-        ${event.id},
-        ${attendeeId},
-        ${name.trim()},
-        ${email.trim().toLowerCase()},
-        ${phone || null},
-        ${age ? parseInt(age, 10) : null},
-        ${organization || null},
-        ${role || null},
-        ${notes || null},
-        ${dietary || null},
-        ${tshirt_size || null},
-        ${sessionWishlistJson},
-        ${customFieldsJson},
-        FALSE,
-        ${isEarlyBird}
-      )
-      RETURNING *;
-    `;
+    // Retry loop to handle any concurrent attendee_id generation collisions safely
+    let registration = null;
+    let attempts = 0;
+    const maxAttempts = 5;
 
-    const registration = inserted[0];
+    while (!registration && attempts < maxAttempts) {
+      attempts++;
+      const attendeeId = await generateAttendeeId(event.id);
+
+      try {
+        const inserted = await sql`
+          INSERT INTO event_registrations (
+            event_id, attendee_id, name, email, phone, age,
+            organization, role, notes, dietary, tshirt_size,
+            interest_tags, session_wishlist, custom_fields,
+            checked_in, is_early_bird
+          ) VALUES (
+            ${event.id},
+            ${attendeeId},
+            ${name.trim()},
+            ${email.trim().toLowerCase()},
+            ${phone || null},
+            ${age ? parseInt(age, 10) : null},
+            ${organization || null},
+            ${role || null},
+            ${notes || null},
+            ${dietary || null},
+            ${tshirt_size || null},
+            ${interestTagsJson},
+            ${sessionWishlistJson},
+            ${customFieldsJson},
+            FALSE,
+            ${isEarlyBird}
+          )
+          RETURNING *;
+        `;
+        if (inserted && inserted.length > 0) {
+          registration = inserted[0];
+        }
+      } catch (insertError: any) {
+        // If it's a unique constraint violation on email
+        if (
+          insertError?.message?.includes('event_registrations_event_id_email_key') ||
+          (insertError?.code === '23505' && insertError?.message?.includes('email'))
+        ) {
+          return NextResponse.json({
+            error: 'You are already registered for this event. Use "Find My Pass" to view your ticket.'
+          }, { status: 409 });
+        }
+
+        // If it's a unique constraint on attendee_id, retry with the next generated ID
+        if (
+          insertError?.message?.includes('attendee_id') ||
+          insertError?.code === '23505'
+        ) {
+          if (attempts >= maxAttempts) {
+            throw insertError;
+          }
+          // Continue to next attempt
+          continue;
+        }
+
+        // For any other DB error, throw immediately
+        throw insertError;
+      }
+    }
+
+    if (!registration) {
+      return NextResponse.json({ error: 'Failed to generate unique registration ticket. Please try again.' }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,

@@ -1,10 +1,11 @@
-﻿'use client';
+'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { EventRegistration, Event } from '@/types';
 import {
   Sparkles, Calendar, Clock, MapPin, Download,
-  Printer, Share2, CheckCircle2, ShieldCheck, QrCode
+  Printer, Share2, CheckCircle2, ShieldCheck, Tag,
+  Award, Check, Copy
 } from 'lucide-react';
 
 interface InstantPassProps {
@@ -18,26 +19,17 @@ export const InstantPass: React.FC<InstantPassProps> = ({
   event,
   onRegisterAnother,
 }) => {
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    async function loadQr() {
-      try {
-        const res = await fetch(`/api/registrations/qr?attendee_id=${encodeURIComponent(registration.attendee_id)}`);
-        const data = await res.json();
-        if (data.qrDataUrl) {
-          setQrDataUrl(data.qrDataUrl);
-        }
-      } catch (e) {
-        console.error('Error loading QR code:', e);
-      }
-    }
-    loadQr();
-  }, [registration.attendee_id]);
+  const [idCopied, setIdCopied] = useState(false);
 
   const startDate = new Date(event.start_date);
   const endDate = new Date(event.end_date);
+
+  const handleCopyId = () => {
+    navigator.clipboard.writeText(registration.attendee_id);
+    setIdCopied(true);
+    setTimeout(() => setIdCopied(false), 2000);
+  };
 
   // 1. Google Calendar Link
   const getGoogleCalendarUrl = () => {
@@ -115,7 +107,7 @@ export const InstantPass: React.FC<InstantPassProps> = ({
               Registration Confirmed &bull; Pass Issued!
             </h3>
             <p className="text-xs text-emerald-300/80">
-              Welcome aboard, <strong>{registration.name}</strong>. Present this pass at venue check-in.
+              Welcome aboard, <strong>{registration.name}</strong>. Present this pass or your Credential ID at venue check-in.
             </p>
           </div>
         </div>
@@ -123,7 +115,7 @@ export const InstantPass: React.FC<InstantPassProps> = ({
         {onRegisterAnother && (
           <button
             onClick={onRegisterAnother}
-            className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition shrink-0"
+            className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition shrink-0 cursor-pointer"
           >
             + Register Another
           </button>
@@ -183,9 +175,18 @@ export const InstantPass: React.FC<InstantPassProps> = ({
 
               <div>
                 <span className="text-[10px] text-slate-400 uppercase font-semibold">Credential ID</span>
-                <p className="text-sm font-mono font-black text-amber-400 mt-0.5 tracking-wider">
-                  {registration.attendee_id}
-                </p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <p className="text-sm font-mono font-black text-amber-400 tracking-wider">
+                    {registration.attendee_id}
+                  </p>
+                  <button
+                    onClick={handleCopyId}
+                    className="p-1 rounded bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition"
+                    title="Copy Credential ID"
+                  >
+                    {idCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
               </div>
 
               {registration.organization && (
@@ -230,24 +231,31 @@ export const InstantPass: React.FC<InstantPassProps> = ({
             )}
           </div>
 
-          {/* Right Col: Verified QR Code Badge */}
-          <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-slate-950/80 border border-white/10 shadow-inner space-y-3">
-            <div className="w-48 h-48 rounded-xl bg-[#080a0f] p-2 border-2 border-amber-500/30 flex items-center justify-center shadow-lg">
-              {qrDataUrl ? (
-                <img src={qrDataUrl} alt="Attendee QR Badge" className="w-full h-full object-contain rounded-lg" />
-              ) : (
-                <div className="flex flex-col items-center justify-center text-slate-500 gap-2">
-                  <QrCode className="w-12 h-12 animate-pulse text-amber-500/60" />
-                  <span className="text-xs">Generating QR...</span>
-                </div>
-              )}
+          {/* Right Col: Verified Attendee Credential Badge (Replaces QR) */}
+          <div className="flex flex-col items-center justify-center p-6 sm:p-8 rounded-2xl bg-slate-950/90 border-2 border-amber-500/30 shadow-2xl space-y-4 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shadow-lg shadow-amber-500/20">
+              <Award className="w-8 h-8 text-amber-400" />
             </div>
 
-            <div className="text-center">
-              <span className="text-xs font-mono font-bold text-amber-400 tracking-widest block">
-                {registration.attendee_id}
+            <div className="space-y-1">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400/80 font-bold block">
+                Official Delegate Credential
               </span>
-              <span className="text-[10px] text-slate-400">Scan at entrance scanner</span>
+              <div className="py-2 px-4 rounded-xl bg-slate-900 border border-white/10 shadow-inner">
+                <span className="font-mono text-2xl font-black text-amber-400 tracking-widest block">
+                  {registration.attendee_id}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1 text-slate-400 text-xs">
+              <p className="font-bold text-white text-sm">{registration.name}</p>
+              <p className="text-[11px] text-slate-400">{registration.organization || 'General Access'}</p>
+            </div>
+
+            <div className="w-full pt-3 border-t border-white/10 flex items-center justify-center gap-1.5 text-[11px] font-semibold text-emerald-400">
+              <ShieldCheck className="w-4 h-4" />
+              <span>Accreditation Active</span>
             </div>
           </div>
         </div>
@@ -267,7 +275,7 @@ export const InstantPass: React.FC<InstantPassProps> = ({
 
         <button
           onClick={handleDownloadIcs}
-          className="flex items-center justify-center gap-2 p-3.5 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 border border-white/10 text-xs font-bold text-white transition shadow-sm"
+          className="flex items-center justify-center gap-2 p-3.5 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 border border-white/10 text-xs font-bold text-white transition shadow-sm cursor-pointer"
         >
           <Download className="w-4 h-4 text-amber-400" />
           <span>Download .ICS</span>
@@ -275,7 +283,7 @@ export const InstantPass: React.FC<InstantPassProps> = ({
 
         <button
           onClick={handlePrint}
-          className="flex items-center justify-center gap-2 p-3.5 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 border border-white/10 text-xs font-bold text-white transition shadow-sm"
+          className="flex items-center justify-center gap-2 p-3.5 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 border border-white/10 text-xs font-bold text-white transition shadow-sm cursor-pointer"
         >
           <Printer className="w-4 h-4 text-amber-400" />
           <span>Print / PDF</span>
@@ -283,7 +291,7 @@ export const InstantPass: React.FC<InstantPassProps> = ({
 
         <button
           onClick={handleShare}
-          className="flex items-center justify-center gap-2 p-3.5 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 border border-white/10 text-xs font-bold text-white transition shadow-sm"
+          className="flex items-center justify-center gap-2 p-3.5 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 border border-white/10 text-xs font-bold text-white transition shadow-sm cursor-pointer"
         >
           <Share2 className="w-4 h-4 text-amber-400" />
           <span>{copied ? 'Link Copied!' : 'Share Pass'}</span>

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -14,7 +14,7 @@ const FAQS: FAQItem[] = [
   {
     question: 'What is "Find My Pass" and how does it work?',
     answer:
-      'Find My Pass provides zero-friction, cryptographic credential retrieval. Simply input the verified email address associated with your registration. RegisterHub instantly generates your cryptographic QR pass along with session accreditations—no app installation or passwords required.',
+      'Find My Pass provides zero-friction credential retrieval. Simply input the verified email address associated with your registration. RegisterHub instantly retrieves your verified digital pass along with your unique Credential ID and session accreditations—no app installation or passwords required.',
     icon: <Ticket className="w-4 h-4 text-amber-400" />,
   },
   {
