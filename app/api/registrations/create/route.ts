@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
     while (!registration && attempts < maxAttempts) {
       attempts++;
       const attendeeId = await generateAttendeeId(event.id);
+      console.log(`[Registration POST] Attempt ${attempts}: Generated attendeeId = ${attendeeId} for event ${event.id}`);
 
       try {
         const inserted = await sql`

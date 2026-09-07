@@ -233,6 +233,7 @@ export async function generateAttendeeId(eventId: number): Promise<string> {
   const rows = await sql`
     SELECT attendee_id FROM event_registrations WHERE event_id = ${eventId};
   `;
+  console.log(`[generateAttendeeId] eventId=${eventId}, found ${rows.length} rows`);
 
   let maxNum = 0;
   const existingSet = new Set<string>();
@@ -258,5 +259,6 @@ export async function generateAttendeeId(eventId: number): Promise<string> {
     candidate = 'REG-' + String(nextNum).padStart(5, '0');
   }
 
+  console.log(`[generateAttendeeId] maxNum=${maxNum}, returning candidate=${candidate}`);
   return candidate;
 }
