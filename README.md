@@ -36,7 +36,7 @@ A modern, full-stack registration web application built with **Next.js (App Rout
 ### 2. Environment Variables
 Check `.env.local` in the root directory:
 ```env
-DATABASE_URL="postgresql://neondb_owner:.............<Iam Sorry, the DB url cant be exposed"
+DATABASE_URL="postgresql://neondb_owner:.............<Iam Sorry, the DB url cant be exposed>"
 ```
 
 ### 3. Run Development Server
