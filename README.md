@@ -39,8 +39,17 @@ Check `.env.local` in the root directory:
 ```env
 DATABASE_URL="postgresql://neondb_owner:.............<Iam Sorry, the DB url cant be exposed>"
 ```
-
-### 3. Run Development Server
+Run the Application on Docker
+Must have Docker to be installed in the local machine to run this command. 
+Pulling the image from Docker Hub which Public.
+```
+docker pull joeljxhnson/eventhubapp:latest  
+```
+After pulling the Image from Docker Hub, you can run this command to run the application through container and check on localhost:3000.
+```
+docker run -d --name eventhubregisterapp -p 3000:3000 -v app_data:/app/data -e DATABASE_URL="postgresql://neondb_owner:npg_NxOUwj28GePa@ep-frosty-recipe-az7x7jpz-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require" --restart unless-stopped joeljxhnson/eventhubapp:latest
+```
+### 3. To Run on Development Server
 ```bash
 npm run dev
 ```
