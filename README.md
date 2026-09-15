@@ -1,5 +1,5 @@
 # RegisterHub - Attendee Registration Web App
-
+Live Website Link - https://eventhubmanagementapp.vercel.app/events
 A modern, full-stack registration web application built with **Next.js (App Router)**, **Tailwind CSS**, and **Neon PostgreSQL Database**.
 
 ## Features
