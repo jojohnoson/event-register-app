@@ -44,7 +44,7 @@ DATABASE_URL="postgresql://neondb_owner:npg_NxOUwj28GePa@ep-frosty-recipe-az7x7j
 ```
 ### 3. Run the Application on Docker
 Must have Docker to be installed in the local machine to run this command. 
-Pulling the image from Docker Hub which Public.
+Pulling the image from Docker Hub which is in Public State.
 ```
 docker pull joeljxhnson/eventhubapp:latest  
 ```
